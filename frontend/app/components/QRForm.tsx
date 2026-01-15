@@ -1,0 +1,175 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+
+export default function QRForm() {
+  const [formData, setFormData] = useState({
+    tenSach: '',
+    tacGia: '',
+    loaiSach: '',
+    giaTien: '',
+    ngayMua: ''
+  })
+  const [qrId, setQrId] = useState<string | null>(null)
+  const [defaultId, setDefaultId] = useState<string | null>(null)
+  const [isMounted, setIsMounted] = useState(false)
+
+  // Tạo ID 12 chữ số ngẫu nhiên
+  const generateQRId = () => {
+    return Math.floor(100000000000 + Math.random() * 900000000000).toString()
+  }
+
+  // Chỉ tạo ID sau khi component mount trên client để tránh hydration mismatch
+  useEffect(() => {
+    setIsMounted(true)
+    if (!defaultId) {
+      setDefaultId(generateQRId())
+    }
+  }, [defaultId])
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target
+    setFormData(prev => ({ ...prev, [name]: value }))
+    
+    // Tự động tạo ID khi có đủ thông tin
+    if (name === 'tenSach' && value && !qrId) {
+      setQrId(generateQRId())
+    }
+  }
+
+  const handleRefresh = () => {
+    setQrId(generateQRId())
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const finalId = qrId || defaultId
+    if (!qrId && defaultId) {
+      setQrId(defaultId)
+    }
+    // TODO: Lưu vào database
+    if (finalId) {
+      alert(`Đã tạo mã QR với ID: ${finalId}`)
+    }
+  }
+
+  // Sử dụng placeholder khi chưa mount để tránh hydration mismatch
+  const displayId = qrId || defaultId || '000000000000'
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+      <h3 className="text-lg font-bold text-slate-900 mb-5 flex items-center gap-2">
+        <span className="material-symbols-outlined text-primary">qr_code_2</span>
+        Tạo Mã QR Mới
+      </h3>
+      <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-slate-700">Tên sách</label>
+          <input 
+            name="tenSach"
+            value={formData.tenSach}
+            onChange={handleInputChange}
+            className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm" 
+            placeholder="Nhập tên sách..." 
+            type="text"
+            required
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-slate-700">Tác giả</label>
+          <div className="relative">
+            <span className="absolute left-3 top-2.5 text-slate-400 material-symbols-outlined text-[20px]">person_search</span>
+            <input 
+              name="tacGia"
+              value={formData.tacGia}
+              onChange={handleInputChange}
+              className="w-full rounded-lg bg-slate-50 border border-slate-200 pl-10 pr-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm" 
+              placeholder="Tìm hoặc nhập tên tác giả" 
+              type="text"
+              required
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-700">Loại sách</label>
+            <select 
+              name="loaiSach"
+              value={formData.loaiSach}
+              onChange={handleInputChange}
+              className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm appearance-none"
+              required
+            >
+              <option value="">Chọn loại</option>
+              <option value="giaokhoa">Giáo khoa</option>
+              <option value="tieuthuyet">Tiểu thuyết</option>
+              <option value="kynang">Kỹ năng</option>
+              <option value="tapchi">Tạp chí</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-700">Giá tiền</label>
+            <input 
+              name="giaTien"
+              value={formData.giaTien}
+              onChange={handleInputChange}
+              className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm text-right" 
+              placeholder="0" 
+              type="number"
+              min="0"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-700">Ngày mua</label>
+            <input 
+              name="ngayMua"
+              value={formData.ngayMua}
+              onChange={handleInputChange}
+              className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm" 
+              type="date"
+            />
+          </div>
+        </div>
+        <div className="mt-2 p-4 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-4">
+          <div className="bg-white p-2 rounded border border-slate-200 shrink-0">
+            {isMounted && displayId !== '000000000000' ? (
+              <img 
+                alt="QR Code Preview" 
+                className="size-16 object-contain" 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=128x128&data=${displayId}`}
+              />
+            ) : (
+              <div className="size-16 bg-slate-100 rounded flex items-center justify-center">
+                <span className="material-symbols-outlined text-slate-400 text-2xl">qr_code_2</span>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col gap-1 overflow-hidden">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Preview (Bảo mật)</span>
+            <span className="text-sm font-mono font-bold text-slate-900 truncate">
+              {isMounted && displayId !== '000000000000' ? displayId : 'Đang tạo...'}
+            </span>
+            <span className="text-xs text-slate-500 truncate">Thông tin chi tiết đã ẩn</span>
+          </div>
+        </div>
+        <div className="flex gap-3 mt-2">
+          <button 
+            onClick={handleRefresh}
+            className="flex-1 py-2.5 px-4 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-sm font-medium transition-colors" 
+            type="button"
+          >
+            Làm mới
+          </button>
+          <button 
+            className="flex-1 py-2.5 px-4 rounded-lg bg-[#137fec] hover:bg-[#0f6fd6] text-white text-sm font-medium transition-colors shadow-lg shadow-blue-500/20 flex justify-center items-center gap-2" 
+            type="submit"
+          >
+            <span>Tạo Mã QR</span>
+            <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
