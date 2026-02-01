@@ -1,9 +1,27 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Sidebar from '../components/Sidebar'
+import RequireAuth from '../components/RequireAuth'
+import { apiUrl } from '../../lib/api'
+import { logActivity } from '../../lib/activityLog'
+import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
-interface Book {
+interface BookItem {
+  id: string
+  title: string
+  author: string
+  isBorrowed: boolean
+}
+
+interface MemberItem {
+  id: string
+  name: string
+  userId: string
+  department?: string
+}
+
+interface BookInCart {
   id: string
   title: string
   author: string
@@ -14,52 +32,66 @@ interface Book {
 
 export default function MuonPage() {
   const [inputMode, setInputMode] = useState<'qr' | 'manual'>('qr')
-  const [memberId, setMemberId] = useState('098765432101')
+  const [memberId, setMemberId] = useState('')
+  const [manualMemberId, setManualMemberId] = useState('')
+  const [availableBooks, setAvailableBooks] = useState<BookItem[]>([])
+  const [members, setMembers] = useState<MemberItem[]>([])
   const [manualInfo, setManualInfo] = useState({
     name: '',
     className: '',
     borrowDate: ''
   })
   const [bookInput, setBookInput] = useState('')
-  const [books, setBooks] = useState<Book[]>([
-    {
-      id: '1',
-      title: 'Đắc Nhân Tâm',
-      author: 'Dale Carnegie',
-      bookId: 'BK-001293',
-      status: 'Mượn mới',
-      coverImage: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDrjiLoo6Gbc-gDi4sf1Mks-VIlLTX7GgTE53nUM2ETVnJEx7PHUEaPd8ejwSR1abwZr-mXxPiVEI0aA267NAXqIc-zOwSYnzpGkI__TxvxrqOCbUQFAUGBTDJAjoPBVRYfzIdl8XFEijZ8r2c8Rm3u-LfYpeH-NcvnDt5dP-AyH9zYOr-drLUAzvD5Ntz9ixiZ5vMbF78RX-1rzAMLsSMqzQ5p4L5PuTT6QcH_IQpaGDQJHHsHEfqrar8ZAXnyGQ-rwySYMN2Ui5Cb'
-    },
-    {
-      id: '2',
-      title: 'Nhà Giả Kim',
-      author: 'Paulo Coelho',
-      bookId: 'BK-004412',
-      status: 'Mượn mới',
-      coverImage: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDj5uWvxYyS_Pr5Rc_W48XsKjJXo0_mwPp2H8o9wXNmTnf_0pTlBoS70HMuadSQq3mGawyEYyvWVsZOGRB2sjuDp1FZ5NVKQpMoB7Yekydjf4eLsn3hgoWYeFw09-2ziKamQYUNYxYB_nDIx2Bge2hQqnL_u_hcRRXkG0AHhq6RfVjnnaWH2BhCVlHE2OY5pBXP4aL_AU3bD1winkXxUSugzm9P2sYmhezwEGRXVFCe-zgA7ARSA5CMzr7Rm28WFHuNFP901C9tCIpr'
-    },
-    {
-      id: '3',
-      title: 'Harry Potter và Hòn Đá Phù Thủy',
-      author: 'J.K. Rowling',
-      bookId: 'BK-009981',
-      status: 'Mượn mới',
-      coverImage: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDKla3kBwsIgwvw07gRoGlYlc-ARmYfPR8zqBRaRtJ-TYzMDgBMQgn9gomTYp8lMaSZZilp_FGBJPMQyenI7awJcGV4r-ZR0NFtVkneLj3zcVpJtZGg8_f15l4g8_cfBl9wornp1ZFGDa7_x8MlUCq6quw8QNT2OkI5Simq3MgHm1cz0evkXYQKtk3Yu8jwqusylfZ7OCLBE-DP7ChD-P7LQ6u8kfVM2dFxXAz3q4QhAkxury90iog1KvmZWsN7bs6PNYn3oAeCjdZa'
+  const [books, setBooks] = useState<BookInCart[]>([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true)
+      const [booksRes, membersRes] = await Promise.all([
+        fetch(apiUrl('/api/books')),
+        fetch(apiUrl('/api/members')),
+      ])
+      if (booksRes.ok) {
+        const data = await booksRes.json()
+        setAvailableBooks(data.filter((b: BookItem) => !b.isBorrowed))
+      }
+      if (membersRes.ok) {
+        const data = await membersRes.json()
+        setMembers(data)
+      }
+    } catch {
+      setError('Không tải được dữ liệu')
+    } finally {
+      setLoading(false)
     }
-  ])
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
+
+  useRefetchOnFocusAndInterval(fetchData, { intervalMs: 60 * 1000 })
+
+  const selectedMember = inputMode === 'qr'
+    ? members.find(m => m.userId === memberId.trim())
+    : members.find(m => String(m.id) === manualMemberId)
 
   const handleAddBook = () => {
-    if (bookInput.trim() && books.length < 3) {
-      // Mock: Thêm sách mới
-      const newBook: Book = {
-        id: String(books.length + 1),
-        title: `Sách ${books.length + 1}`,
-        author: 'Tác giả',
-        bookId: bookInput,
+    const id = bookInput.trim()
+    if (!id || books.length >= 3) return
+    const found = availableBooks.find(b => b.id === id)
+    if (found && !books.some(b => b.id === found.id)) {
+      setBooks([...books, {
+        id: found.id,
+        title: found.title,
+        author: found.author,
+        bookId: found.id,
         status: 'Mượn mới',
         coverImage: 'https://via.placeholder.com/40x56'
-      }
-      setBooks([...books, newBook])
+      }])
       setBookInput('')
     }
   }
@@ -72,11 +104,39 @@ export default function MuonPage() {
     setBooks([])
   }
 
-  const handleConfirm = () => {
-    // TODO: Xử lý xác nhận mượn sách
-    alert('Xác nhận mượn sách thành công!')
-    setBooks([])
-    setBookInput('')
+  const handleConfirm = async () => {
+    if (!selectedMember) {
+      alert('Vui lòng nhập mã thành viên đúng hoặc chọn thành viên.')
+      return
+    }
+    if (books.length === 0) {
+      alert('Vui lòng thêm ít nhất một sách.')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      for (const book of books) {
+        const res = await fetch(apiUrl('/api/borrow/create'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bookId: Number(book.id), memberId: Number(selectedMember.id) }),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data.detail || 'Lỗi tạo phiếu mượn')
+        }
+      }
+      const bookList = books.map(b => b.title).join(', ')
+      logActivity('Mượn sách', selectedMember ? `Thành viên: ${selectedMember.name} | Sách: ${bookList || `${books.length} cuốn`}` : `Sách: ${bookList || `${books.length} cuốn`}`)
+      alert('Xác nhận mượn sách thành công!')
+      setBooks([])
+      setBookInput('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Lỗi kết nối')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const isLimitReached = books.length >= 3
@@ -84,6 +144,7 @@ export default function MuonPage() {
   const returnDate = '28/10/2023'
 
   return (
+    <RequireAuth>
     <div className="relative flex min-h-screen w-full flex-row bg-white text-slate-900 font-display overflow-hidden">
       <Sidebar />
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -96,11 +157,17 @@ export default function MuonPage() {
             </div>
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
               <span className="material-symbols-outlined text-slate-500 text-sm">calendar_today</span>
-              <span className="text-slate-700 text-sm font-medium">Thứ Hai, 14/10/2023</span>
+              <span className="text-slate-700 text-sm font-medium">{new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
             </div>
           </div>
         </header>
-        <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:py-8">
+        <div className="flex-1 overflow-y-auto no-scrollbar px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:py-8">
+          {error && (
+            <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 flex items-center gap-2">
+              <span className="material-symbols-outlined">error</span>
+              {error}
+            </div>
+          )}
           <div className="flex flex-col gap-6">
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start h-full">
@@ -130,6 +197,7 @@ export default function MuonPage() {
                       onClick={() => {
                         setInputMode('manual')
                         setMemberId('')
+                        setManualMemberId(manualMemberId || (members[0] ? String(members[0].id) : ''))
                       }}
                       className={`flex-1 py-2 text-sm font-medium rounded transition-all ${
                         inputMode === 'manual' 
@@ -164,7 +232,22 @@ export default function MuonPage() {
                   ) : (
                     <div className="flex flex-col gap-3">
                       <div className="flex flex-col gap-2">
-                        <label className="text-xs font-semibold text-slate-500 uppercase">Tên</label>
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Chọn thành viên</label>
+                        <select
+                          className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                          value={manualMemberId}
+                          onChange={(e) => setManualMemberId(e.target.value)}
+                        >
+                          <option value="">-- Chọn thành viên --</option>
+                          {members.map((m) => (
+                            <option key={m.id} value={String(m.id)}>
+                              {m.name} (ID: {m.userId})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Tên (ghi chú)</label>
                         <input
                           className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                           placeholder="Nhập tên người mượn..."
@@ -174,7 +257,7 @@ export default function MuonPage() {
                         />
                       </div>
                       <div className="flex flex-col gap-2">
-                        <label className="text-xs font-semibold text-slate-500 uppercase">Lớp</label>
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Lớp (ghi chú)</label>
                         <input
                           className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                           placeholder="Nhập lớp..."
@@ -183,22 +266,12 @@ export default function MuonPage() {
                           onChange={(e) => setManualInfo(prev => ({ ...prev, className: e.target.value }))}
                         />
                       </div>
-                      <div className="flex flex-col gap-2">
-                        <label className="text-xs font-semibold text-slate-500 uppercase">Ngày mượn</label>
-                        <input
-                          className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                          placeholder="Chọn ngày mượn..."
-                          type="date"
-                          value={manualInfo.borrowDate}
-                          onChange={(e) => setManualInfo(prev => ({ ...prev, borrowDate: e.target.value }))}
-                        />
-                      </div>
                     </div>
                   )}
                 </div>
 
-                {/* Member Info Card - Only show when QR mode and valid 12-digit ID */}
-                {inputMode === 'qr' && memberId.length === 12 && /^\d+$/.test(memberId) && (
+                {/* Member Info Card - show when có thành viên được chọn (QR hoặc thủ công) */}
+                {selectedMember && (
                   <div className="bg-gradient-to-br from-white to-slate-50 p-0 rounded-xl shadow-md border border-slate-200 overflow-hidden relative group">
                     <div className="absolute top-0 right-0 p-3">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-200">
@@ -217,9 +290,9 @@ export default function MuonPage() {
                           ></div>
                         </div>
                       </div>
-                      <h3 className="text-slate-900 text-lg font-bold">Nguyễn Văn An</h3>
-                      <p className="text-slate-500 text-sm mb-1">ID: <span className="font-mono text-slate-700">{memberId}</span></p>
-                      <p className="text-slate-500 text-sm">Lớp: <span className="font-medium text-slate-700">12A1</span></p>
+                      <h3 className="text-slate-900 text-lg font-bold">{selectedMember.name}</h3>
+                      <p className="text-slate-500 text-sm mb-1">ID: <span className="font-mono text-slate-700">{selectedMember.userId}</span></p>
+                      <p className="text-slate-500 text-sm">Ban: <span className="font-medium text-slate-700">{selectedMember.department || '-'}</span></p>
                       <div className="grid grid-cols-4 gap-2 w-full mt-6 border-t border-slate-200 pt-4">
                         <div className="flex flex-col">
                           <span className="text-xs text-slate-500">Đang mượn</span>
@@ -379,7 +452,7 @@ export default function MuonPage() {
                       </button>
                       <button
                         onClick={handleConfirm}
-                        disabled={books.length === 0}
+                        disabled={books.length === 0 || submitting || !selectedMember}
                         className="flex-[2] px-4 py-3 rounded-lg text-white font-bold shadow-lg shadow-blue-500/30 transition-all flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-600"
                         style={{ backgroundColor: '#137fec' }}
                       >
@@ -395,5 +468,6 @@ export default function MuonPage() {
         </div>
       </main>
     </div>
+    </RequireAuth>
   )
 }

@@ -1,8 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { apiUrl } from '../../lib/api'
+import { logActivity } from '../../lib/activityLog'
 
-export default function QRForm() {
+const GENRE_MAP: Record<string, string> = {
+  giaokhoa: 'Giáo khoa',
+  tieuthuyet: 'Tiểu thuyết',
+  kynang: 'Kỹ năng',
+  tapchi: 'Tạp chí',
+}
+
+export default function QRForm({ onCreated }: { onCreated?: () => void }) {
   const [formData, setFormData] = useState({
     tenSach: '',
     tacGia: '',
@@ -13,6 +22,8 @@ export default function QRForm() {
   const [qrId, setQrId] = useState<string | null>(null)
   const [defaultId, setDefaultId] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Tạo ID 12 chữ số ngẫu nhiên
   const generateQRId = () => {
@@ -41,15 +52,37 @@ export default function QRForm() {
     setQrId(generateQRId())
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const finalId = qrId || defaultId
-    if (!qrId && defaultId) {
-      setQrId(defaultId)
-    }
-    // TODO: Lưu vào database
-    if (finalId) {
-      alert(`Đã tạo mã QR với ID: ${finalId}`)
+    setError(null)
+    setSubmitting(true)
+    try {
+      const res = await fetch(apiUrl('/api/books/create'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formData.tenSach.trim(),
+          author: formData.tacGia.trim(),
+          genre: GENRE_MAP[formData.loaiSach] || formData.loaiSach || '',
+          publisher: '',
+          price: formData.giaTien ? String(formData.giaTien) : '',
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.detail || 'Lỗi tạo sách')
+      }
+      const data = await res.json()
+      logActivity('Thêm sách (QR)', `Tên: ${formData.tenSach.trim()} | Tác giả: ${formData.tacGia.trim() || '—'} | Loại: ${GENRE_MAP[formData.loaiSach] || formData.loaiSach || '—'}`)
+      setFormData({ tenSach: '', tacGia: '', loaiSach: '', giaTien: '', ngayMua: '' })
+      setQrId(null)
+      setDefaultId(null)
+      onCreated?.()
+      alert(`Đã tạo mã QR sách thành công. ID: ${data.id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lỗi kết nối')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -62,6 +95,12 @@ export default function QRForm() {
         <span className="material-symbols-outlined text-primary">qr_code_2</span>
         Tạo Mã QR Mới
       </h3>
+      {error && (
+        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px]">error</span>
+          {error}
+        </div>
+      )}
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-slate-700">Tên sách</label>
@@ -161,11 +200,11 @@ export default function QRForm() {
             Làm mới
           </button>
           <button 
-            className="flex-1 py-2.5 px-4 rounded-lg bg-[#137fec] hover:bg-[#0f6fd6] text-white text-sm font-medium transition-colors shadow-lg shadow-blue-500/20 flex justify-center items-center gap-2" 
+            disabled={submitting}
+            className="flex-1 py-2.5 px-4 rounded-lg bg-[#137fec] hover:bg-[#0f6fd6] text-white text-sm font-medium transition-colors shadow-lg shadow-blue-500/20 flex justify-center items-center gap-2 disabled:opacity-50" 
             type="submit"
           >
-            <span>Tạo Mã QR</span>
-            <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+            {submitting ? <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span> : <><span>Tạo Mã QR</span><span className="material-symbols-outlined text-[18px]">arrow_forward</span></>}
           </button>
         </div>
       </form>

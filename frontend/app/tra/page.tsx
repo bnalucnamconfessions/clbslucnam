@@ -1,8 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Sidebar from '../components/Sidebar'
+import RequireAuth from '../components/RequireAuth'
+import { apiUrl } from '../../lib/api'
+import { logActivity } from '../../lib/activityLog'
+import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
+
+interface BorrowRecord {
+  id: number
+  bookId: number
+  bookTitle: string
+  memberId: number
+  memberName: string
+  borrowDate: string
+  dueDate: string
+}
 
 interface Book {
   id: string
@@ -26,71 +40,125 @@ interface LoanInfo {
 }
 
 export default function TraPage() {
-  const [scannedBookId, setScannedBookId] = useState('123456789012')
-  const [scannedBook, setScannedBook] = useState<Book | null>({
-    id: '1',
-    title: 'Đắc Nhân Tâm',
-    author: 'Dale Carnegie',
-    bookId: '123456789012',
-    coverImage: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDrjiLoo6Gbc-gDi4sf1Mks-VIlLTX7GgTE53nUM2ETVnJEx7PHUEaPd8ejwSR1abwZr-mXxPiVEI0aA267NAXqIc-zOwSYnzpGkI__TxvxrqOCbUQFAUGBTDJAjoPBVRYfzIdl8XFEijZ8r2c8Rm3u-LfYpeH-NcvnDt5dP-AyH9zYOr-drLUAzvD5Ntz9ixiZ5vMbF78RX-1rzAMLsSMqzQ5p4L5PuTT6QcH_IQpaGDQJHHsHEfqrar8ZAXnyGQ-rwySYMN2Ui5Cb'
-  })
-  const [loanInfo, setLoanInfo] = useState<LoanInfo | null>({
-    memberName: 'Nguyễn Văn An',
-    memberId: '098765432101',
-    className: '12A1',
-    memberAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCj9U70a_pSB-PDGn1hROw_7HrprwPJMUNkHqBp-dgdrKZdayHZ94qIM3W1bBV2jIyi7_YQdUxJtLgBlelETw7WZnMD7y0csfq2dcbLkrJoPNY4gtLpxrNbJc_c-ydWzagphVznsinU-LZvGNPfAbwRhKftLhDGzZk0iUR7TqcITOFniOrGgOYOepmv39bFPLv7v4HVDL0E9pU4ABRtq1I03dJMPZOi-caqNt6VfPa-WbxACL4g3JVoga0syBTeLYpMjrrGtbI-aZGG',
-    borrowDate: '01/10/2023',
-    dueDate: '15/10/2023',
-    returnDate: '14/10/2023',
-    status: 'on-time',
-    daysRemaining: 1,
-    daysAgo: 13
-  })
+  const [borrows, setBorrows] = useState<BorrowRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [scannedBookId, setScannedBookId] = useState('')
+  const [selectedRecord, setSelectedRecord] = useState<BorrowRecord | null>(null)
+  const [scannedBook, setScannedBook] = useState<Book | null>(null)
+  const [loanInfo, setLoanInfo] = useState<LoanInfo | null>(null)
   const [returnNotes, setReturnNotes] = useState('')
+
+  const fetchBorrows = async () => {
+    try {
+      const res = await fetch(apiUrl('/api/borrow'))
+      if (res.ok) {
+        const data = await res.json()
+        setBorrows(data)
+      }
+    } catch {
+      setError('Không tải được danh sách mượn')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchBorrows()
+  }, [])
+
+  useRefetchOnFocusAndInterval(fetchBorrows, { intervalMs: 60 * 1000 })
+
+  const formatDate = (iso: string) => {
+    try {
+      const d = new Date(iso)
+      const day = String(d.getDate()).padStart(2, '0')
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const year = d.getFullYear()
+      return `${day}/${month}/${year}`
+    } catch {
+      return iso
+    }
+  }
 
   const handleScanBook = (bookId: string) => {
     setScannedBookId(bookId)
-    // Mock: Tìm thông tin sách và phiếu mượn
-    if (bookId === '123456789012') {
-      setScannedBook({
-        id: '1',
-        title: 'Đắc Nhân Tâm',
-        author: 'Dale Carnegie',
-        bookId: '123456789012',
-        coverImage: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDrjiLoo6Gbc-gDi4sf1Mks-VIlLTX7GgTE53nUM2ETVnJEx7PHUEaPd8ejwSR1abwZr-mXxPiVEI0aA267NAXqIc-zOwSYnzpGkI__TxvxrqOCbUQFAUGBTDJAjoPBVRYfzIdl8XFEijZ8r2c8Rm3u-LfYpeH-NcvnDt5dP-AyH9zYOr-drLUAzvD5Ntz9ixiZ5vMbF78RX-1rzAMLsSMqzQ5p4L5PuTT6QcH_IQpaGDQJHHsHEfqrar8ZAXnyGQ-rwySYMN2Ui5Cb'
-      })
-      setLoanInfo({
-        memberName: 'Nguyễn Văn An',
-        memberId: '098765432101',
-        className: '12A1',
-        memberAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCj9U70a_pSB-PDGn1hROw_7HrprwPJMUNkHqBp-dgdrKZdayHZ94qIM3W1bBV2jIyi7_YQdUxJtLgBlelETw7WZnMD7y0csfq2dcbLkrJoPNY4gtLpxrNbJc_c-ydWzagphVznsinU-LZvGNPfAbwRhKftLhDGzZk0iUR7TqcITOFniOrGgOYOepmv39bFPLv7v4HVDL0E9pU4ABRtq1I03dJMPZOi-caqNt6VfPa-WbxACL4g3JVoga0syBTeLYpMjrrGtbI-aZGG',
-        borrowDate: '01/10/2023',
-        dueDate: '15/10/2023',
-        returnDate: '14/10/2023',
-        status: 'on-time',
-        daysRemaining: 1,
-        daysAgo: 13
-      })
+    const id = Number(bookId)
+    if (!isNaN(id) && borrows.length > 0) {
+      const record = borrows.find(b => b.bookId === id)
+      if (record) {
+        setSelectedRecord(record)
+        setScannedBook({
+          id: String(record.bookId),
+          title: record.bookTitle,
+          author: '',
+          bookId: String(record.bookId),
+          coverImage: 'https://via.placeholder.com/40x56'
+        })
+        const due = new Date(record.dueDate)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        due.setHours(0, 0, 0, 0)
+        const daysRemaining = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+        setLoanInfo({
+          memberName: record.memberName,
+          memberId: String(record.memberId),
+          className: '-',
+          memberAvatar: '',
+          borrowDate: formatDate(record.borrowDate),
+          dueDate: formatDate(record.dueDate),
+          returnDate: formatDate(new Date().toISOString()),
+          status: daysRemaining >= 0 ? 'on-time' : 'overdue',
+          daysRemaining,
+          daysAgo: 0
+        })
+      } else {
+        setSelectedRecord(null)
+        setScannedBook(null)
+        setLoanInfo(null)
+      }
     } else {
+      setSelectedRecord(null)
       setScannedBook(null)
       setLoanInfo(null)
     }
   }
 
-  const handleConfirm = () => {
-    if (!scannedBook || !loanInfo) {
-      alert('Vui lòng quét mã sách trước!')
+  const handleConfirm = async () => {
+    if (!selectedRecord) {
+      alert('Vui lòng quét mã sách hoặc chọn phiếu mượn!')
       return
     }
-    // TODO: Xử lý xác nhận trả sách
-    alert('Xác nhận trả sách thành công!')
-    setScannedBookId('')
-    setScannedBook(null)
-    setLoanInfo(null)
-    setReturnNotes('')
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await fetch(apiUrl('/api/return'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId: selectedRecord.id }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.detail || 'Lỗi trả sách')
+      }
+      logActivity('Trả sách', selectedRecord ? `Sách: ${selectedRecord.bookTitle} | Thành viên: ${selectedRecord.memberName} | Hạn trả: ${selectedRecord.dueDate}` : '')
+      alert('Xác nhận trả sách thành công!')
+      setScannedBookId('')
+      setScannedBook(null)
+      setLoanInfo(null)
+      setSelectedRecord(null)
+      setReturnNotes('')
+      fetchBorrows()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Lỗi kết nối')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
+    <RequireAuth>
     <div className="relative flex min-h-screen w-full flex-row bg-white text-slate-900 font-display overflow-hidden">
       <Sidebar />
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -103,11 +171,23 @@ export default function TraPage() {
             </div>
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
               <span className="material-symbols-outlined text-slate-500 text-sm">calendar_today</span>
-              <span className="text-slate-700 text-sm font-medium">Thứ Hai, 14/10/2023</span>
+              <span className="text-slate-700 text-sm font-medium">{new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
             </div>
           </div>
         </header>
-        <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:py-8">
+        <div className="flex-1 overflow-y-auto no-scrollbar px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:py-8">
+          {error && (
+            <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 flex items-center gap-2">
+              <span className="material-symbols-outlined">error</span>
+              {error}
+            </div>
+          )}
+          {loading && (
+            <div className="mb-4 p-4 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 flex items-center gap-2">
+              <span className="material-symbols-outlined animate-spin">progress_activity</span>
+              Đang tải danh sách phiếu mượn...
+            </div>
+          )}
           <div className="flex flex-col gap-6">
 
             {/* Main Content Grid */}
@@ -128,20 +208,23 @@ export default function TraPage() {
                       <input
                         autoFocus
                         className="block w-full pl-10 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-mono"
-                        placeholder="Quét mã..."
+                        placeholder="Nhập mã sách hoặc quét mã (Enter để tìm)"
                         type="text"
                         value={scannedBookId}
                         onChange={(e) => {
                           const value = e.target.value
                           setScannedBookId(value)
-                          if (value.length === 12) {
-                            handleScanBook(value)
-                          } else {
+                          if (!value.trim()) {
                             setScannedBook(null)
                             setLoanInfo(null)
+                            setSelectedRecord(null)
                           }
                         }}
-                        maxLength={12}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && scannedBookId.trim()) {
+                            handleScanBook(scannedBookId.trim())
+                          }
+                        }}
                       />
                       {scannedBook && (
                         <button className="absolute inset-y-0 right-0 pr-2 flex items-center">
@@ -260,10 +343,15 @@ export default function TraPage() {
                           </button>
                           <button 
                             onClick={handleConfirm}
-                            className="px-6 py-3 rounded-lg bg-[#137fec] text-white font-bold hover:bg-[#0f6fd6] shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2 flex-1 sm:flex-none"
+                            disabled={submitting}
+                            className="px-6 py-3 rounded-lg bg-[#137fec] text-white font-bold hover:bg-[#0f6fd6] shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2 flex-1 sm:flex-none disabled:opacity-50 disabled:cursor-not-allowed"
                             style={{ backgroundColor: '#137fec' }}
                           >
-                            <span className="material-symbols-outlined">assignment_return</span>
+                            {submitting ? (
+                              <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                            ) : (
+                              <span className="material-symbols-outlined">assignment_return</span>
+                            )}
                             Xác nhận trả sách
                           </button>
                         </div>
@@ -284,5 +372,6 @@ export default function TraPage() {
         </div>
       </main>
     </div>
+    </RequireAuth>
   )
 }

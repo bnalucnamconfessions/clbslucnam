@@ -26,3 +26,12 @@
   font-variation-settings: 'FILL' 1;
 }
 
+/* Ẩn thanh cuộn nhưng vẫn cuộn được (chuột / touch) */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

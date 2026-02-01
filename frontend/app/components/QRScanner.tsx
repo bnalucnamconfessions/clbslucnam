@@ -34,11 +34,7 @@ export default function QRScanner({ onScan, label = 'Quét mã QR' }: QRScannerP
   return (
     <div className="flex flex-col gap-3">
       <label className="text-sm font-medium text-slate-700 dark:text-[#92adc9]">{label}</label>
-<<<<<<< HEAD
       <div className="flex items-center gap-2">
-=======
-      <div className="flex gap-2">
->>>>>>> 538a117253fff00345b67f51300e8120e5efb64e
         <div className="relative flex-1">
           <span className="absolute left-3 top-2.5 text-slate-400 material-symbols-outlined text-[20px]">qr_code_scanner</span>
           <input
