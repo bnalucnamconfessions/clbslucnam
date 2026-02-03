@@ -91,7 +91,7 @@ Chỉ hiển thị cho thành viên có vai trò (`club_permission !== 'user'`).
 | Tạo mã QR (bulk) | Có menu Kho sách |
 | Mượn sách, Trả sách | Có menu Kho sách |
 
-*Backend hiện chưa kiểm tra quyền; quyền thực tế do Frontend che menu.*
+*Backend kiểm tra quyền:* `_require_kho_sach` — BCN + Ban Quản lý Sách (`admin`, `chairperson`, `vice_chairperson`, `head_book`, `vice_head_book`, `member_book`). API: `/api/books`, `/api/books/create`, `/api/books/bulk-create`, `/api/books/<id>`, `/api/books/<id>/delete`, `/api/borrow`, `/api/borrow/create`, `/api/return`.
 
 ### 5.2. Thành viên (Members)
 | Hành động | Quyền |
@@ -99,7 +99,7 @@ Chỉ hiển thị cho thành viên có vai trò (`club_permission !== 'user'`).
 | Xem danh sách thành viên CLB | Thành viên có vai trò |
 | Thêm / Sửa / Xóa thành viên | Thành viên có vai trò |
 
-*Backend chưa kiểm tra quyền.*
+*Backend kiểm tra quyền:* `_require_thanh_vien` — Thành viên có vai trò (`club_permission !== 'user'`). API: `/api/members`, `/api/members/create`, `/api/members/<id>`, `/api/members/<id>/delete`. `/api/dashboard/overdue` cũng yêu cầu thành viên có vai trò.
 
 ### 5.3. Tài khoản đăng nhập (Accounts)
 | Hành động | Quyền (Frontend) | Quyền (Backend API) |
@@ -187,10 +187,10 @@ Chỉ hiển thị cho thành viên có vai trò (`club_permission !== 'user'`).
 ### 5.10. Tải ảnh (Upload)
 | Endpoint | Quyền |
 |----------|-------|
-| `POST /api/upload-image` | Đang dùng cho Đối tác, Quà tặng — gọi từ form có quyền tương ứng |
-| `POST /api/accounts/upload-avatar` | Đang dùng cho Hồ sơ — mọi user đăng nhập |
+| `POST /api/upload-image` | **BCN + Ban Nhân sự - Tài Chính** (Đối tác, Quà tặng) |
+| `POST /api/accounts/upload-avatar` | **Mọi user đăng nhập** (Hồ sơ) |
 
-*Backend chưa kiểm tra quyền riêng; phụ thuộc UI che form.*
+*Backend kiểm tra quyền:* `upload_image` dùng `_require_doi_tac_edit`; `account_upload_avatar` dùng `_get_account_from_request` (chỉ cần đăng nhập).
 
 ---
 
@@ -223,4 +223,4 @@ Chỉ hiển thị cho thành viên có vai trò (`club_permission !== 'user'`).
 
 - **Frontend:** `frontend/lib/permissions.ts`
 - **Frontend (Thành viên):** `frontend/app/thanh-vien/page.tsx` (CAN_MANAGE_ACCOUNTS, CAN_VIEW_ACTIVITY_LOG)
-- **Backend:** `backend/api/views.py` (`_require_ban_chu_nhiem`, `_require_doi_tac_edit`, `QUYEN_GOP_EDIT_PERMISSIONS`, `DOI_TAC_EDIT_PERMISSIONS`)
+- **Backend:** `backend/api/views.py` (`_require_ban_chu_nhiem`, `_require_doi_tac_edit`, `_require_kho_sach`, `_require_thanh_vien`, `KHO_SACH_PERMISSIONS`, `THANH_VIEN_PERMISSIONS`, `QUYEN_GOP_EDIT_PERMISSIONS`, `DOI_TAC_EDIT_PERMISSIONS`)

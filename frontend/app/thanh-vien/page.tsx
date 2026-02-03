@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Sidebar from '../components/Sidebar'
 import RequireAuth from '../components/RequireAuth'
-import { apiUrl } from '../../lib/api'
+import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
@@ -173,7 +173,8 @@ export default function ThanhVienPage() {
     try {
       setLoading(true)
       setError(null)
-      const res = await fetch(apiUrl('/api/members'))
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth('/api/members'), { headers })
       if (!res.ok) throw new Error('Lỗi tải danh sách thành viên')
       const data = await res.json()
       setMembers(data)
@@ -367,15 +368,17 @@ export default function ThanhVienPage() {
     setSubmitting(true)
     setError(null)
     try {
+      const { headers, accountEmail } = getApiAuth()
       const res = await fetch(apiUrl('/api/members/create'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: formMember.name,
           userId: formMember.userId,
           department: PERMISSION_OPTIONS.find(p => p.value === formMember.permission)?.department ?? formMember.department,
           role: PERMISSION_OPTIONS.find(p => p.value === formMember.permission)?.role ?? formMember.role,
           status: formMember.status,
+          accountEmail: accountEmail || undefined,
         }),
       })
       if (!res.ok) {
@@ -407,7 +410,8 @@ export default function ThanhVienPage() {
     if (!confirm(`Bạn có chắc muốn xóa thành viên "${member.name}"?`)) return
     setError(null)
     try {
-      const res = await fetch(apiUrl(`/api/members/${member.id}/delete`), { method: 'DELETE' })
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth(`/api/members/${member.id}/delete`), { method: 'DELETE', headers })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || 'Lỗi xóa thành viên')
@@ -443,9 +447,10 @@ export default function ThanhVienPage() {
     setError(null)
     try {
       const perm = PERMISSION_OPTIONS.find(p => p.value === formMember.permission)
+      const { headers, accountEmail } = getApiAuth()
       const res = await fetch(apiUrl(`/api/members/${editingMember.id}`), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: formMember.name,
           userId: formMember.userId,
@@ -454,6 +459,7 @@ export default function ThanhVienPage() {
           clubPermission: formMember.permission,
           status: formMember.status,
           joinDate: formMember.joinDate || undefined,
+          accountEmail: accountEmail || undefined,
         }),
       })
       if (!res.ok) {

@@ -6,7 +6,7 @@ import RequireAuth from '../components/RequireAuth'
 import QRForm from '../components/QRForm'
 import StatsCards from '../components/StatsCards'
 import QRCodeTable from '../components/QRCodeTable'
-import { apiUrl } from '../../lib/api'
+import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
@@ -25,7 +25,8 @@ export default function QRPage() {
   const fetchBooks = async () => {
     setLoadingBooks(true)
     try {
-      const res = await fetch(apiUrl('/api/books'))
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth('/api/books'), { headers })
       if (res.ok) {
         const data = await res.json()
         setBooks(data)
@@ -62,10 +63,11 @@ export default function QRPage() {
     setSubmitting(true)
     setError(null)
     try {
+      const { headers, accountEmail } = getApiAuth()
       const res = await fetch(apiUrl('/api/books/bulk-create'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ count: bulkCount }),
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count: bulkCount, accountEmail: accountEmail || undefined }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { apiUrl } from '../../lib/api'
+import { apiUrl, getApiAuth } from '../../lib/api'
 
 type SponsorGold = { name: string; description: string; image: string; icon: string; url?: string }
 type PartnerStrategic = { name: string; desc: string; image: string; url?: string }
@@ -381,10 +381,12 @@ export default function DoiTacContent({ canEdit = false }: { canEdit?: boolean }
                             onChange={async (e) => {
                               const file = e.target.files?.[0]
                               if (!file) return
+                              const { headers, accountEmail } = getApiAuth()
                               const form = new FormData()
                               form.append('file', file)
+                              if (accountEmail) form.append('accountEmail', accountEmail)
                               try {
-                                const res = await fetch(apiUrl('/api/upload-image'), { method: 'POST', body: form })
+                                const res = await fetch(apiUrl('/api/upload-image'), { method: 'POST', headers, body: form })
                                 if (!res.ok) throw new Error('Lỗi tải ảnh')
                                 const data = await res.json()
                                 if (data?.url) {
@@ -514,10 +516,12 @@ export default function DoiTacContent({ canEdit = false }: { canEdit?: boolean }
                             onChange={async (e) => {
                               const file = e.target.files?.[0]
                               if (!file) return
+                              const { headers, accountEmail } = getApiAuth()
                               const form = new FormData()
                               form.append('file', file)
+                              if (accountEmail) form.append('accountEmail', accountEmail)
                               try {
-                                const res = await fetch(apiUrl('/api/upload-image'), { method: 'POST', body: form })
+                                const res = await fetch(apiUrl('/api/upload-image'), { method: 'POST', headers, body: form })
                                 if (!res.ok) throw new Error('Lỗi tải ảnh')
                                 const data = await res.json()
                                 if (data?.url) {

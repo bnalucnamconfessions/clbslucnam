@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Sidebar from '../components/Sidebar'
 import RequireAuth from '../components/RequireAuth'
-import { apiUrl } from '../../lib/api'
+import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
@@ -52,7 +52,8 @@ export default function TraPage() {
 
   const fetchBorrows = async () => {
     try {
-      const res = await fetch(apiUrl('/api/borrow'))
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth('/api/borrow'), { headers })
       if (res.ok) {
         const data = await res.json()
         setBorrows(data)
@@ -133,10 +134,11 @@ export default function TraPage() {
     setSubmitting(true)
     setError(null)
     try {
+      const { headers, accountEmail } = getApiAuth()
       const res = await fetch(apiUrl('/api/return'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId: selectedRecord.id }),
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId: selectedRecord.id, accountEmail: accountEmail || undefined }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))

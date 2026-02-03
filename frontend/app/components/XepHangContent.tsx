@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { apiUrl } from '../../lib/api'
+import { apiUrl, getApiAuth } from '../../lib/api'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
 type TopReaderApi = { id: number; name: string; bookCount: number; rank: number; avatarUrl?: string }
@@ -479,10 +479,12 @@ export default function XepHangContent({ timeTab = 'Tháng này', onTimeTabChang
                                 const file = e.target.files?.[0]
                                 if (!file) return
                                 setGiftImageUploadingIndex(idx)
+                                const { headers, accountEmail } = getApiAuth()
+                                const form = new FormData()
+                                form.append('file', file)
+                                if (accountEmail) form.append('accountEmail', accountEmail)
                                 try {
-                                  const form = new FormData()
-                                  form.append('file', file)
-                                  const res = await fetch(apiUrl('/api/upload-image'), { method: 'POST', body: form })
+                                  const res = await fetch(apiUrl('/api/upload-image'), { method: 'POST', headers, body: form })
                                   if (!res.ok) throw new Error('Lỗi tải ảnh')
                                   const data = await res.json()
                                   if (data?.url) updateGiftItem(idx, 'imageUrl', data.url)

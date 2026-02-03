@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Sidebar from '../components/Sidebar'
 import RequireAuth from '../components/RequireAuth'
-import { apiUrl } from '../../lib/api'
+import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
@@ -50,9 +50,10 @@ export default function MuonPage() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
+      const { headers } = getApiAuth()
       const [booksRes, membersRes] = await Promise.all([
-        fetch(apiUrl('/api/books')),
-        fetch(apiUrl('/api/members')),
+        fetch(apiUrlWithAuth('/api/books'), { headers }),
+        fetch(apiUrlWithAuth('/api/members'), { headers }),
       ])
       if (booksRes.ok) {
         const data = await booksRes.json()
@@ -117,10 +118,11 @@ export default function MuonPage() {
     setError(null)
     try {
       for (const book of books) {
+        const { headers, accountEmail } = getApiAuth()
         const res = await fetch(apiUrl('/api/borrow/create'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookId: Number(book.id), memberId: Number(selectedMember.id) }),
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bookId: Number(book.id), memberId: Number(selectedMember.id), accountEmail: accountEmail || undefined }),
         })
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))

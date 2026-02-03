@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { apiUrl } from '../../lib/api'
+import { apiUrl, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 
 const GENRE_MAP: Record<string, string> = {
@@ -57,15 +57,17 @@ export default function QRForm({ onCreated }: { onCreated?: () => void }) {
     setError(null)
     setSubmitting(true)
     try {
+      const { headers, accountEmail } = getApiAuth()
       const res = await fetch(apiUrl('/api/books/create'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: formData.tenSach.trim(),
           author: formData.tacGia.trim(),
           genre: GENRE_MAP[formData.loaiSach] || formData.loaiSach || '',
           publisher: '',
           price: formData.giaTien ? String(formData.giaTien) : '',
+          accountEmail: accountEmail || undefined,
         }),
       })
       if (!res.ok) {

@@ -45,7 +45,7 @@ export default function DangNhapPage() {
       const userInfo = { fullName: fn || 'User', email, accountEmail: email, role: role || 'Người dùng', clubPermission, avatar: picture || '' }
       localStorage.setItem('userInfo', JSON.stringify(userInfo))
       window.dispatchEvent(new Event('userInfoUpdated'))
-      logActivity('Đăng nhập', `Đăng nhập qua Google | Email: ${email || '—'}`, email || undefined)
+      if (token.startsWith('google-') && (email || '').trim()) logActivity('Đăng nhập', `Đăng nhập qua Google | Email: ${(email || '').trim() || '—'}`, (email || '').trim() || undefined)
       const dest = clubPermission === 'user' ? '/dashboard/xep-hang' : '/dashboard'
       router.replace(dest)
       return

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Sidebar from '../components/Sidebar'
 import RequireAuth from '../components/RequireAuth'
-import { apiUrl } from '../../lib/api'
+import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
@@ -44,7 +44,8 @@ export default function BooksPage() {
     try {
       setLoading(true)
       setError(null)
-      const res = await fetch(apiUrl('/api/books'))
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth('/api/books'), { headers })
       if (!res.ok) throw new Error('Lỗi tải danh sách sách')
       const data = await res.json()
       setBooks(data)
@@ -69,7 +70,8 @@ export default function BooksPage() {
     }
     setError(null)
     try {
-      const res = await fetch(apiUrl(`/api/books/${book.id}/delete`), { method: 'DELETE' })
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth(`/api/books/${book.id}/delete`), { method: 'DELETE', headers })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || 'Lỗi xóa sách')
@@ -99,10 +101,11 @@ export default function BooksPage() {
     setSubmitting(true)
     setError(null)
     try {
+      const { headers, accountEmail } = getApiAuth()
       const res = await fetch(apiUrl(`/api/books/${editingBook.id}`), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formBook),
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...formBook, accountEmail: accountEmail || undefined }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -129,10 +132,11 @@ export default function BooksPage() {
     setSubmitting(true)
     setError(null)
     try {
+      const { headers, accountEmail } = getApiAuth()
       const res = await fetch(apiUrl('/api/books/create'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formBook),
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...formBook, accountEmail: accountEmail || undefined }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))

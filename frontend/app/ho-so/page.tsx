@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Sidebar from '../components/Sidebar'
 import RequireAuth from '../components/RequireAuth'
-import { apiUrl } from '../../lib/api'
+import { apiUrl, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 
 interface PersonalInfo {
@@ -171,6 +171,11 @@ export default function HoSoPage() {
       try {
         const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
         const s = localStorage.getItem('userInfo')
+        // #region agent log
+        const _p = s ? (() => { try { return JSON.parse(s) } catch { return {} } })() : {}
+        const _em = (_p.accountEmail || _p.email || '').trim()
+        fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ho-so:syncRoleFromBackend',message:'Before auth/me',data:{hasS:!!s,hasToken:!!token,hasEmail:!!_em},hypothesisId:'H2,H3',timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         if (!s) return
         const parsed = JSON.parse(s)
         const email = (parsed.accountEmail || parsed.email || '').trim()
@@ -263,10 +268,13 @@ export default function HoSoPage() {
     }
     setUploadingAvatar(true)
     try {
+      const { headers, accountEmail } = getApiAuth()
       const form = new FormData()
       form.append('file', file)
+      if (accountEmail) form.append('accountEmail', accountEmail)
       const res = await fetch(apiUrl('/api/accounts/upload-avatar'), {
         method: 'POST',
+        headers,
         body: form,
       })
       if (!res.ok) {

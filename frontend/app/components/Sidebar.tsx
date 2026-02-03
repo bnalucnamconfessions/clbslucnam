@@ -85,6 +85,11 @@ export default function Sidebar() {
       try {
         const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
         const raw = localStorage.getItem('userInfo')
+        // #region agent log
+        const _parsed = raw ? (() => { try { return JSON.parse(raw) } catch { return {} } })() : {}
+        const _email = (_parsed.accountEmail || _parsed.email || '').trim()
+        fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Sidebar:syncFromBackend',message:'Before auth/me',data:{hasRaw:!!raw,hasToken:!!token,tokenPre:token?String(token).slice(0,10)+'..':'',hasEmail:!!_email,emailLen:_email.length},hypothesisId:'H1,H2,H3',timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         if (!raw) return
         const parsed = JSON.parse(raw)
         const email = (parsed.accountEmail || parsed.email || '').trim()
@@ -93,6 +98,9 @@ export default function Sidebar() {
         const headers: HeadersInit = { 'Content-Type': 'application/json' }
         if (token) headers['Authorization'] = `Bearer ${token}`
         const res = await fetch(url, { credentials: 'include', headers })
+        // #region agent log
+        if (!res.ok) fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Sidebar:syncFromBackend:resNotOk',message:'auth/me failed',data:{status:res.status,urlHadEmail:url.includes('email=')},hypothesisId:'H1',timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         if (!res.ok) return
         const data = await res.json()
         const newPerm = (data.clubPermission || 'user').toLowerCase()

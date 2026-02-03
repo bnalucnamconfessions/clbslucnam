@@ -96,6 +96,17 @@ def login(request):
 @api_view(["GET"])
 def auth_me(request):
     """Trả về quyền hiện tại của user. Ưu tiên Authorization: Bearer <token> (token dạng email-<id>), nếu không có thì dùng query email (kém bảo mật hơn)."""
+    # #region agent log
+    import json
+    _ah = request.META.get("HTTP_AUTHORIZATION") or ""
+    _token_pre = (_ah[7:].strip()[:12] + "..") if _ah.startswith("Bearer ") and len(_ah) > 7 else "none"
+    _g = dict(request.GET)
+    try:
+        with open(r"d:\code\clbslucnam\.cursor\debug.log", "a", encoding="utf-8") as _f:
+            _f.write(json.dumps({"location": "auth_me:entry", "message": "auth_me request", "data": {"auth_prefix": _token_pre, "GET_keys": list(_g.keys()), "email_val": (request.GET.get("email") or request.GET.get("accountEmail") or "").strip()[:50], "has_email_param": bool((request.GET.get("email") or request.GET.get("accountEmail") or "").strip())}, "hypothesisId": "H1,H5", "timestamp": __import__("time").time() * 1000}) + "\n")
+    except Exception:
+        pass
+    # #endregion
     acc = None
     auth_header = request.META.get("HTTP_AUTHORIZATION") or ""
     if auth_header.startswith("Bearer "):
@@ -108,6 +119,13 @@ def auth_me(request):
     if acc is None:
         email = (request.GET.get("email") or request.GET.get("accountEmail") or "").strip()
         if not email:
+            # #region agent log
+            try:
+                with open(r"d:\code\clbslucnam\.cursor\debug.log", "a", encoding="utf-8") as _f:
+                    _f.write(json.dumps({"location": "auth_me:400", "message": "Returning 400 - no email no acc", "data": {"reason": "acc_is_none_and_email_empty"}, "hypothesisId": "H1", "timestamp": __import__("time").time() * 1000}) + "\n")
+            except Exception:
+                pass
+            # #endregion
             return Response({"detail": "Thiếu email hoặc token (Authorization: Bearer email-<id>)."}, status=status.HTTP_400_BAD_REQUEST)
         acc = Account.objects.filter(Q(email=email) | Q(display_email=email)).first()
         if not acc:
@@ -569,7 +587,10 @@ def google_auth_callback(request):
         name = idinfo.get("name", email.split("@")[0] if email else "User")
         app_token = "google-" + (idinfo.get("sub", "") or "demo")
         role_enc = urlquote("Quản trị viên")
-        return redirect(f"{frontend_url}/dang-nhap?token={app_token}&fullName={urlquote(name)}&role={role_enc}")
+        params = f"token={app_token}&fullName={urlquote(name)}&role={role_enc}"
+        if email:
+            params += f"&email={urlquote(email)}"
+        return redirect(f"{frontend_url}/dang-nhap?{params}")
     except Exception:
         return redirect(f"{frontend_url}/dang-nhap?error=auth_failed")
 
@@ -606,7 +627,10 @@ def account_list(request):
 @csrf_exempt
 @api_view(["POST"])
 def account_upload_avatar(request):
-    """Tải ảnh từ máy lên, lưu vào media/avatars và trả về URL."""
+    """Tải ảnh từ máy lên, lưu vào media/avatars và trả về URL. Yêu cầu đăng nhập."""
+    acc, err = _get_account_from_request(request)
+    if err is not None:
+        return err
     if "file" not in request.FILES:
         return Response({"detail": "Thiếu file ảnh"}, status=status.HTTP_400_BAD_REQUEST)
     f = request.FILES["file"]
@@ -629,7 +653,10 @@ def account_upload_avatar(request):
 @csrf_exempt
 @api_view(["POST"])
 def upload_image(request):
-    """Tải ảnh từ máy lên (dùng cho đối tác, nhà tài trợ, v.v.), lưu vào media/uploads và trả về URL."""
+    """Tải ảnh từ máy lên (dùng cho đối tác, quà tặng). Yêu cầu BCN hoặc Ban NS-TC."""
+    _, err = _require_doi_tac_edit(request)
+    if err is not None:
+        return err
     if "file" not in request.FILES:
         return Response({"detail": "Thiếu file ảnh"}, status=status.HTTP_400_BAD_REQUEST)
     f = request.FILES["file"]
@@ -934,7 +961,10 @@ def ranking_gifts_update(request):
 
 @api_view(["GET"])
 def overdue_books(request):
-    """Lấy danh sách sách quá hạn chưa trả."""
+    """Lấy danh sách sách quá hạn chưa trả. Yêu cầu thành viên có vai trò."""
+    _, err = _require_thanh_vien(request)
+    if err is not None:
+        return err
     rows = OverdueBook.objects.all()
     return Response([
         {
@@ -951,6 +981,9 @@ def overdue_books(request):
 # --- Sách ---
 @api_view(["GET"])
 def book_list(request):
+    _, err = _require_kho_sach(request)
+    if err is not None:
+        return err
     rows = Book.objects.all()
     return Response([
         {
@@ -969,6 +1002,9 @@ def book_list(request):
 @csrf_exempt
 @api_view(["POST"])
 def book_create(request):
+    _, err = _require_kho_sach(request)
+    if err is not None:
+        return err
     data = request.data
     book = Book.objects.create(
         title=data.get("title", ""),
@@ -985,6 +1021,9 @@ def book_create(request):
 @api_view(["POST"])
 def book_bulk_create(request):
     """Tạo hàng loạt sách placeholder (mã QR). Body: { count: 1-100 }."""
+    _, err = _require_kho_sach(request)
+    if err is not None:
+        return err
     count = request.data.get("count", 0)
     try:
         count = int(count)
@@ -1010,6 +1049,9 @@ def book_bulk_create(request):
 @api_view(["PUT", "PATCH"])
 def book_update(request, book_id):
     """Cập nhật sách. PUT/PATCH với { title, author, genre, publisher, price }."""
+    _, err = _require_kho_sach(request)
+    if err is not None:
+        return err
     try:
         book = Book.objects.get(pk=book_id)
     except Book.DoesNotExist:
@@ -1033,6 +1075,9 @@ def book_update(request, book_id):
 @api_view(["DELETE"])
 def book_delete(request, book_id):
     """Xóa sách. Không xóa được nếu sách đang được mượn."""
+    _, err = _require_kho_sach(request)
+    if err is not None:
+        return err
     try:
         book = Book.objects.get(pk=book_id)
     except Book.DoesNotExist:
@@ -1046,6 +1091,9 @@ def book_delete(request, book_id):
 # --- Thành viên ---
 @api_view(["GET"])
 def member_list(request):
+    _, err = _require_thanh_vien(request)
+    if err is not None:
+        return err
     for acc in Account.objects.exclude(club_permission="user"):
         user_id = f"acc-{acc.id}"
         if not Member.objects.filter(user_id=user_id).exists():
@@ -1090,6 +1138,9 @@ def member_list(request):
 @csrf_exempt
 @api_view(["POST"])
 def member_create(request):
+    _, err = _require_thanh_vien(request)
+    if err is not None:
+        return err
     data = request.data
     member = Member.objects.create(
         name=data.get("name", ""),
@@ -1105,6 +1156,9 @@ def member_create(request):
 @api_view(["PUT", "PATCH"])
 def member_update(request, member_id):
     """Cập nhật thành viên."""
+    _, err = _require_thanh_vien(request)
+    if err is not None:
+        return err
     try:
         member = Member.objects.get(pk=member_id)
     except Member.DoesNotExist:
@@ -1163,6 +1217,9 @@ def member_update(request, member_id):
 @api_view(["DELETE"])
 def member_delete(request, member_id):
     """Xóa thành viên. Không xóa được nếu đang có sách mượn chưa trả."""
+    _, err = _require_thanh_vien(request)
+    if err is not None:
+        return err
     try:
         member = Member.objects.get(pk=member_id)
     except Member.DoesNotExist:
@@ -1381,6 +1438,9 @@ def notification_delete(request, notif_id):
 # --- Mượn / Trả ---
 @api_view(["GET"])
 def borrow_list(request):
+    _, err = _require_kho_sach(request)
+    if err is not None:
+        return err
     rows = BorrowRecord.objects.select_related("book", "member").filter(return_date__isnull=True)
     return Response([
         {
@@ -1399,6 +1459,9 @@ def borrow_list(request):
 @csrf_exempt
 @api_view(["POST"])
 def borrow_create(request):
+    _, err = _require_kho_sach(request)
+    if err is not None:
+        return err
     data = request.data
     book_id = data.get("bookId")
     member_id = data.get("memberId")
@@ -1430,6 +1493,9 @@ def borrow_create(request):
 @csrf_exempt
 @api_view(["POST"])
 def return_book(request):
+    _, err = _require_kho_sach(request)
+    if err is not None:
+        return err
     data = request.data
     record_id = data.get("recordId") or data.get("borrowId")
     if not record_id:
@@ -1745,6 +1811,77 @@ def doi_tac_update(request):
 # --- Quyên góp ---
 # Chỉ Ban chủ nhiệm (QTV, Chủ nhiệm, Phó Chủ nhiệm) được tạo/sửa chiến dịch.
 QUYEN_GOP_EDIT_PERMISSIONS = ("admin", "chairperson", "vice_chairperson")
+
+# Kho sách (Books, QR, Mượn, Trả): BCN + Ban Quản lý Sách (khớp frontend SIDEBAR_SHOW_BOOK_MENU).
+KHO_SACH_PERMISSIONS = (
+    "admin", "chairperson", "vice_chairperson",
+    "head_book", "vice_head_book", "member_book",
+)
+# Thành viên: có vai trò (không phải user).
+THANH_VIEN_PERMISSIONS = (
+    "admin", "chairperson", "vice_chairperson",
+    "head_book", "vice_head_book", "member_book",
+    "head_communication", "vice_head_communication", "member_communication",
+    "head_hr_finance", "vice_head_hr_finance", "member_hr_finance",
+)
+
+
+def _get_account_from_request(request):
+    """Lấy Account từ request: Bearer email-<id> hoặc email/accountEmail trong body/GET. Trả (acc, None) hoặc (None, err_Response)."""
+    acc = None
+    auth_header = request.META.get("HTTP_AUTHORIZATION") or ""
+    if auth_header.startswith("Bearer "):
+        token = (auth_header[7:] or "").strip()
+        if token.startswith("email-") and token[6:].isdigit():
+            try:
+                acc = Account.objects.get(pk=int(token[6:]))
+            except (ValueError, Account.DoesNotExist):
+                pass
+    if acc is None:
+        data = getattr(request, "data", None) or {}
+        if not isinstance(data, dict):
+            data = {}
+        email = (
+            (data.get("accountEmail") or data.get("email") or "")
+            or (request.GET.get("accountEmail") or request.GET.get("email") or "")
+        ).strip()
+        if not email:
+            return None, Response(
+                {"detail": "Thiếu email tài khoản (accountEmail) hoặc token (Authorization: Bearer email-<id>)."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        acc = Account.objects.filter(Q(email__iexact=email) | Q(display_email__iexact=email)).first()
+        if not acc:
+            return None, Response({"detail": "Không tìm thấy tài khoản."}, status=status.HTTP_404_NOT_FOUND)
+    return acc, None
+
+
+def _require_kho_sach(request):
+    """Kiểm tra quyền Kho sách (BCN + Ban Quản lý Sách)."""
+    acc, err = _get_account_from_request(request)
+    if err is not None:
+        return None, err
+    perm = (acc.club_permission or "user").strip().lower()
+    if perm not in KHO_SACH_PERMISSIONS:
+        return None, Response(
+            {"detail": "Chỉ Ban Chủ nhiệm và Ban Quản lý Sách được thực hiện thao tác này."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return acc, None
+
+
+def _require_thanh_vien(request):
+    """Kiểm tra quyền Thành viên (có vai trò, không phải user)."""
+    acc, err = _get_account_from_request(request)
+    if err is not None:
+        return None, err
+    perm = (acc.club_permission or "user").strip().lower()
+    if perm not in THANH_VIEN_PERMISSIONS:
+        return None, Response(
+            {"detail": "Chỉ thành viên có vai trò được thực hiện thao tác này."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return acc, None
 
 
 def _require_ban_chu_nhiem(request):

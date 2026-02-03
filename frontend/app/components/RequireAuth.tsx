@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { USER_ALLOWED_PATHS, USER_RESTRICTED_PREFIXES } from '../../lib/permissions'
+import { logActivity } from '../../lib/activityLog'
 
 const AUTH_KEY = 'adminToken'
 
@@ -31,6 +32,8 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
       const userInfo = { fullName: fn || 'User', email: email || '', accountEmail: email || '', role: role || 'Người dùng', clubPermission, avatar: picture || '' }
       localStorage.setItem('userInfo', JSON.stringify(userInfo))
       window.dispatchEvent(new Event('userInfoUpdated'))
+      const isGoogle = typeof token === 'string' && token.startsWith('google-')
+      if (isGoogle && (email || '').trim()) logActivity('Đăng nhập', `Đăng nhập qua Google | Email: ${(email || '').trim() || '—'}`, (email || '').trim() || undefined)
       document.cookie = 'auth_picture=; path=/; max-age=0'
       window.history.replaceState({}, '', window.location.pathname)
       if (clubPermission === 'user') {

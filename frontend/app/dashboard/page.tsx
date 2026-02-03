@@ -5,7 +5,7 @@ import Link from 'next/link'
 import Sidebar from '../components/Sidebar'
 import Header from '../components/Header'
 import RequireAuth from '../components/RequireAuth'
-import { API_BASE, apiUrl } from '../../lib/api'
+import { API_BASE, apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
 type DashboardStats = {
@@ -65,10 +65,11 @@ export default function DashboardPage() {
     try {
       setLoading(true)
       setError(null)
+      const { headers } = getApiAuth()
       const [statsRes, readersRes, overdueRes, fundRes, campaignRes, notifRes] = await Promise.all([
         fetch(apiUrl('/api/dashboard/stats')),
         fetch(apiUrl('/api/dashboard/top-readers')),
-        fetch(apiUrl('/api/dashboard/overdue')),
+        fetch(apiUrlWithAuth('/api/dashboard/overdue'), { headers }),
         fetch(apiUrl('/api/fund/stats')),
         fetch(apiUrl('/api/quyen-gop/campaign')),
         fetch(apiUrl('/api/notifications')),
