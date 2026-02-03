@@ -6,8 +6,10 @@ import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
 type TopReaderApi = { id: number; name: string; bookCount: number; rank: number; avatarUrl?: string }
 type StatsApi = { borrowMonth: number; activeMembers: number }
+type GiftItem = { title: string; subtitle: string; imageUrl: string }
+type RankingGiftsApi = { intro: string; items: GiftItem[] }
 
-type XepHangContentProps = { timeTab?: string; onTimeTabChange?: (tab: string) => void }
+type XepHangContentProps = { timeTab?: string; onTimeTabChange?: (tab: string) => void; canEdit?: boolean }
 
 function getCurrentUserName(): string {
   if (typeof window === 'undefined') return ''
@@ -20,12 +22,32 @@ function getCurrentUserName(): string {
   }
 }
 
-export default function XepHangContent({ timeTab = 'Tháng này', onTimeTabChange }: XepHangContentProps) {
+function getAccountEmail(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    const raw = localStorage.getItem('userInfo')
+    const info = raw ? JSON.parse(raw) : {}
+    return (info.email || info.accountEmail || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+export default function XepHangContent({ timeTab = 'Tháng này', onTimeTabChange, canEdit = false }: XepHangContentProps) {
   const [hideIdentity, setHideIdentity] = useState(false)
   const [topReaders, setTopReaders] = useState<TopReaderApi[]>([])
   const [stats, setStats] = useState<StatsApi | null>(null)
+  const [gifts, setGifts] = useState<RankingGiftsApi | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [giftModalOpen, setGiftModalOpen] = useState(false)
+  const [giftEditIntro, setGiftEditIntro] = useState('')
+  const [giftEditItems, setGiftEditItems] = useState<GiftItem[]>([])
+  const [giftSaving, setGiftSaving] = useState(false)
+  const [giftSaveError, setGiftSaveError] = useState<string | null>(null)
+  const [giftImageUploadingIndex, setGiftImageUploadingIndex] = useState<number | null>(null)
 
   const currentUserName = getCurrentUserName()
   const myRankEntry = currentUserName
@@ -43,9 +65,10 @@ export default function XepHangContent({ timeTab = 'Tháng này', onTimeTabChang
     try {
       setLoading(true)
       setError(null)
-      const [readersRes, statsRes] = await Promise.all([
+      const [readersRes, statsRes, giftsRes] = await Promise.all([
         fetch(apiUrl('/api/dashboard/top-readers')),
         fetch(apiUrl('/api/dashboard/stats')),
+        fetch(apiUrl('/api/dashboard/ranking-gifts')),
       ])
       if (!readersRes.ok) throw new Error('Lỗi tải bảng xếp hạng')
       const readers = await readersRes.json()
@@ -53,6 +76,10 @@ export default function XepHangContent({ timeTab = 'Tháng này', onTimeTabChang
       if (statsRes.ok) {
         const s = await statsRes.json()
         setStats({ borrowMonth: s.borrowMonth ?? 0, activeMembers: s.activeMembers ?? 0 })
+      }
+      if (giftsRes.ok) {
+        const g = await giftsRes.json()
+        setGifts({ intro: g.intro ?? '', items: Array.isArray(g.items) ? g.items : [] })
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Không kết nối được backend')
@@ -65,7 +92,82 @@ export default function XepHangContent({ timeTab = 'Tháng này', onTimeTabChang
     fetchData()
   }, [fetchData])
 
-  useRefetchOnFocusAndInterval(fetchData, { intervalMs: 60 * 1000 })
+  useRefetchOnFocusAndInterval(fetchData, { intervalMs: 20 * 1000 })
+
+  const handleRefreshRanking = async () => {
+    const email = getAccountEmail()
+    if (!email) {
+      setRefreshError('Vui lòng đăng nhập lại.')
+      return
+    }
+    setRefreshing(true)
+    setRefreshError(null)
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/top-readers/refresh'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountEmail: email }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.detail || 'Cập nhật thất bại')
+      }
+      await fetchData()
+    } catch (e) {
+      setRefreshError(e instanceof Error ? e.message : 'Cập nhật thất bại')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const openGiftModal = () => {
+    setGiftEditIntro(gifts?.intro ?? '')
+    setGiftEditItems(gifts?.items?.length ? [...gifts.items] : [{ title: '', subtitle: '', imageUrl: '' }])
+    setGiftSaveError(null)
+    setGiftModalOpen(true)
+  }
+
+  const handleSaveGifts = async () => {
+    const email = getAccountEmail()
+    if (!email) {
+      setGiftSaveError('Vui lòng đăng nhập lại.')
+      return
+    }
+    setGiftSaving(true)
+    setGiftSaveError(null)
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/ranking-gifts/update'), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountEmail: email,
+          intro: giftEditIntro.trim() || undefined,
+          items: giftEditItems.filter((i) => (i.title || i.subtitle || i.imageUrl)).map((i) => ({
+            title: i.title.trim(),
+            subtitle: i.subtitle.trim(),
+            imageUrl: i.imageUrl.trim(),
+          })),
+        }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.detail || 'Lưu thất bại')
+      }
+      const data = await res.json()
+      setGifts({ intro: data.intro ?? giftEditIntro, items: data.items ?? giftEditItems })
+      setGiftModalOpen(false)
+    } catch (e) {
+      setGiftSaveError(e instanceof Error ? e.message : 'Lưu thất bại')
+    } finally {
+      setGiftSaving(false)
+    }
+  }
+
+  const addGiftItem = () => setGiftEditItems((prev) => [...prev, { title: '', subtitle: '', imageUrl: '' }])
+  const removeGiftItem = (idx: number) => setGiftEditItems((prev) => prev.filter((_, i) => i !== idx))
+  const updateGiftItem = (idx: number, field: keyof GiftItem, value: string) => {
+    setGiftEditItems((prev) => prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)))
+  }
 
   const podiumList = [topReaders[1], topReaders[0], topReaders[2]]
     .filter(Boolean)
@@ -101,6 +203,21 @@ export default function XepHangContent({ timeTab = 'Tháng này', onTimeTabChang
   return (
     <div className="p-4 md:p-6 lg:px-8 lg:py-8 flex justify-center">
       <div className="flex flex-col max-w-[1280px] flex-1 gap-6 w-full">
+        {canEdit && (
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleRefreshRanking}
+              disabled={refreshing}
+              className="flex items-center gap-2 px-4 py-2.5 text-white text-sm font-bold rounded-lg shadow-lg transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: '#137fec' }}
+            >
+              <span className={`material-symbols-outlined text-[20px] ${refreshing ? 'animate-spin' : ''}`}>{refreshing ? 'progress_activity' : 'refresh'}</span>
+              {refreshing ? 'Đang cập nhật...' : 'Cập nhật bảng xếp hạng'}
+            </button>
+            {refreshError && <p className="text-sm text-red-600 font-medium">{refreshError}</p>}
+          </div>
+        )}
         <div className="flex flex-col gap-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="flex flex-col gap-2 rounded-lg p-6 bg-white border border-slate-200 shadow-sm">
@@ -223,37 +340,41 @@ export default function XepHangContent({ timeTab = 'Tháng này', onTimeTabChang
 
           <div className="flex flex-col gap-6">
             <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="bg-pink-500/20 p-2 rounded-lg text-pink-500">
-                  <span className="material-symbols-outlined fill-1">card_giftcard</span>
+              <div className="flex items-center justify-between gap-3 mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="bg-pink-500/20 p-2 rounded-lg text-pink-500">
+                    <span className="material-symbols-outlined fill-1">card_giftcard</span>
+                  </div>
+                  <h2 className="text-slate-900 font-bold text-xl">Quà tặng Tháng {new Date().getMonth() + 1}</h2>
                 </div>
-                <h2 className="text-slate-900 font-bold text-xl">Quà tặng Tháng {new Date().getMonth() + 1}</h2>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={openGiftModal}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                    Chỉnh sửa quà
+                  </button>
+                )}
               </div>
-              <p className="text-slate-500 text-sm mb-6">Những phần quà hấp dẫn dành riêng cho Top 3 người đọc chăm chỉ nhất tháng này.</p>
+              <p className="text-slate-500 text-sm mb-6">{gifts?.intro || 'Những phần quà hấp dẫn dành riêng cho Top 3 người đọc chăm chỉ nhất tháng này.'}</p>
               <div className="flex flex-col gap-4">
-                <div className="flex gap-3 p-3 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors border border-transparent hover:border-slate-200">
-                  <div className="w-16 h-16 rounded-lg bg-slate-200 flex-shrink-0" style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuBOtF31QubkOC7P9HFHTtEF8vjq_YU6ysz1Z9Aq4Ezj0xlA2iwdY1UN3VhP8bQfddL8rRyYSUNo2wLdC_gZ2ofPFa4lFgXDs4RbccKwhPQPV4pUGFC9A5KZJu6PxSy6nFkBtXDCtnv5pHjaceQYPP0zlTCze5BidfOtyF_h7jOy7lFmsBLKJBqB--5lHwuqBR3T6ojInJEp9GvnEl_8EHlBrOV8EgN94CNnMZkyPmo2ARdDW7lAMhYpoPnH0yEPPnZRYeMVBT112arq")', backgroundSize: 'cover' }} />
-                  <div className="flex flex-col justify-center">
-                    <p className="text-slate-900 font-bold text-sm">Voucher Tiki 200k</p>
-                    <p className="text-slate-500 text-xs">Dành cho Hạng #1</p>
+                {(gifts?.items?.length ? gifts.items : [
+                  { title: 'Voucher Tiki 200k', subtitle: 'Dành cho Hạng #1', imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBOtF31QubkOC7P9HFHTtEF8vjq_YU6ysz1Z9Aq4Ezj0xlA2iwdY1UN3VhP8bQfddL8rRyYSUNo2wLdC_gZ2ofPFa4lFgXDs4RbccKwhPQPV4pUGFC9A5KZJu6PxSy6nFkBtXDCtnv5pHjaceQYPP0zlTCze5BidfOtyF_h7jOy7lFmsBLKJBqB--5lHwuqBR3T6ojInJEp9GvnEl_8EHlBrOV8EgN94CNnMZkyPmo2ARdDW7lAMhYpoPnH0yEPPnZRYeMVBT112arq' },
+                  { title: 'Túi Tote CLB', subtitle: 'Dành cho Hạng #2 & #3', imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDvg1085xtY4_1_KsnQSW0nFfO-ak-He21GMTL4wY82I4ew6NQcmVWRI-DH_cd1eckM7lRkw-EXTdCqIuG6PGf9auFd6jNJDM53g94xHGhOATBwE2QfxU-ge5mg8ZOzQsZNds1gTjXe3W96_Wm8AKEZFVKpDLI439SarQLBDn9A5CRLEH9Y0JTe3_9OD2FdogysA86jaym6cEkuTAgg7SG94V1DGmiohv0ovOIRRYRSGq6jhrikZFFAP9GhOLaI3dCpOoJiqJYY1vIa' },
+                  { title: 'Sách Tự Chọn', subtitle: 'Bốc thăm may mắn Top 10', imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAGr39HK8MuZX52nNDiS09fjibC6FfjZoyTLTfN3Id1Hoyo0VSEG12TFa8CKvTTI5WA1_aTnWEkaaBs-p-a5o6US4QJgvKXwerBRRxUnLLOaRUmNHZHjkNtTBDLylxJEkRjFUh3DpJK-58DH4KVqBuRLv0E0RBuZv8PiBmWlduwxt8_9RJR3vK2oJ43Y0GDkhqDDQGp-YrsIFjQ8j1ul0Ax-Z7Yq2_v7eVcqafgdHwszGY2W-uAAaXTRUt4C7Qv6kiYA6UFBsr_yK03' },
+                ]).map((item, idx) => (
+                  <div key={idx} className="flex gap-3 p-3 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors border border-transparent hover:border-slate-200">
+                    <div className="w-16 h-16 rounded-lg bg-slate-200 flex-shrink-0 bg-cover bg-center" style={{ backgroundImage: item.imageUrl ? `url("${item.imageUrl}")` : undefined }} />
+                    <div className="flex flex-col justify-center min-w-0">
+                      <p className="text-slate-900 font-bold text-sm">{item.title || 'Quà'}</p>
+                      <p className="text-slate-500 text-xs">{item.subtitle || '—'}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex gap-3 p-3 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors border border-transparent hover:border-slate-200">
-                  <div className="w-16 h-16 rounded-lg bg-slate-200 flex-shrink-0" style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDvg1085xtY4_1_KsnQSW0nFfO-ak-He21GMTL4wY82I4ew6NQcmVWRI-DH_cd1eckM7lRkw-EXTdCqIuG6PGf9auFd6jNJDM53g94xHGhOATBwE2QfxU-ge5mg8ZOzQsZNds1gTjXe3W96_Wm8AKEZFVKpDLI439SarQLBDn9A5CRLEH9Y0JTe3_9OD2FdogysA86jaym6cEkuTAgg7SG94V1DGmiohv0ovOIRRYRSGq6jhrikZFFAP9GhOLaI3dCpOoJiqJYY1vIa")', backgroundSize: 'cover' }} />
-                  <div className="flex flex-col justify-center">
-                    <p className="text-slate-900 font-bold text-sm">Túi Tote CLB</p>
-                    <p className="text-slate-500 text-xs">Dành cho Hạng #2 & #3</p>
-                  </div>
-                </div>
-                <div className="flex gap-3 p-3 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors border border-transparent hover:border-slate-200">
-                  <div className="w-16 h-16 rounded-lg bg-slate-200 flex-shrink-0" style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuAGr39HK8MuZX52nNDiS09fjibC6FfjZoyTLTfN3Id1Hoyo0VSEG12TFa8CKvTTI5WA1_aTnWEkaaBs-p-a5o6US4QJgvKXwerBRRxUnLLOaRUmNHZHjkNtTBDLylxJEkRjFUh3DpJK-58DH4KVqBuRLv0E0RBuZv8PiBmWlduwxt8_9RJR3vK2oJ43Y0GDkhqDDQGp-YrsIFjQ8j1ul0Ax-Z7Yq2_v7eVcqafgdHwszGY2W-uAAaXTRUt4C7Qv6kiYA6UFBsr_yK03")', backgroundSize: 'cover' }} />
-                  <div className="flex flex-col justify-center">
-                    <p className="text-slate-900 font-bold text-sm">Sách Tự Chọn</p>
-                    <p className="text-slate-500 text-xs">Bốc thăm may mắn Top 10</p>
-                  </div>
-                </div>
+                ))}
               </div>
-              <button className="mt-6 w-full flex items-center justify-center h-10 rounded-lg bg-primary hover:bg-primary/90 text-white font-bold text-sm transition-colors">
+              <button type="button" className="mt-6 w-full flex items-center justify-center h-10 rounded-lg bg-primary hover:bg-primary/90 text-white font-bold text-sm transition-colors">
                 Xem chi tiết quy định
               </button>
             </div>
@@ -286,6 +407,128 @@ export default function XepHangContent({ timeTab = 'Tháng này', onTimeTabChang
             </div>
           </div>
         </div>
+
+        {/* Modal chỉnh sửa quà tặng */}
+        {giftModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => !giftSaving && setGiftModalOpen(false)}>
+            <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900">Chỉnh sửa quà tặng tháng</h3>
+                <button type="button" onClick={() => !giftSaving && setGiftModalOpen(false)} className="p-1 rounded hover:bg-slate-100 text-slate-500">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+              <div className="p-6 flex flex-col gap-4">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium text-slate-700">Mô tả ngắn (intro)</span>
+                  <textarea
+                    value={giftEditIntro}
+                    onChange={(e) => setGiftEditIntro(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-slate-200 p-3 text-sm text-slate-900 placeholder-slate-400 focus:border-primary focus:ring-1 focus:ring-primary"
+                    placeholder="Những phần quà hấp dẫn dành riêng cho Top 3..."
+                  />
+                </label>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-700">Các phần quà</span>
+                  <button type="button" onClick={addGiftItem} className="text-sm text-primary font-medium hover:underline flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[18px]">add</span>
+                    Thêm quà
+                  </button>
+                </div>
+                <div className="flex flex-col gap-3">
+                  {giftEditItems.map((item, idx) => (
+                    <div key={idx} className="p-4 rounded-lg border border-slate-200 bg-slate-50/50 flex flex-col gap-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-medium text-slate-500">Quà #{idx + 1}</span>
+                        <button type="button" onClick={() => removeGiftItem(idx)} className="text-red-500 hover:text-red-600 p-1">
+                          <span className="material-symbols-outlined text-[18px]">delete</span>
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={item.title}
+                        onChange={(e) => updateGiftItem(idx, 'title', e.target.value)}
+                        placeholder="Tên quà (VD: Voucher Tiki 200k)"
+                        className="w-full rounded border border-slate-200 px-3 py-2 text-sm"
+                      />
+                      <input
+                        type="text"
+                        value={item.subtitle}
+                        onChange={(e) => updateGiftItem(idx, 'subtitle', e.target.value)}
+                        placeholder="Mô tả (VD: Dành cho Hạng #1)"
+                        className="w-full rounded border border-slate-200 px-3 py-2 text-sm"
+                      />
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-xs font-medium text-slate-500">Ảnh quà (URL hoặc tải từ máy)</span>
+                        <div className="flex gap-2">
+                          <input
+                            type="url"
+                            value={item.imageUrl}
+                            onChange={(e) => updateGiftItem(idx, 'imageUrl', e.target.value)}
+                            placeholder="URL ảnh quà"
+                            className="flex-1 min-w-0 rounded border border-slate-200 px-3 py-2 text-sm"
+                          />
+                          <label className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 cursor-pointer disabled:opacity-50">
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/gif,image/webp"
+                              className="sr-only"
+                              disabled={giftImageUploadingIndex !== null}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                setGiftImageUploadingIndex(idx)
+                                try {
+                                  const form = new FormData()
+                                  form.append('file', file)
+                                  const res = await fetch(apiUrl('/api/upload-image'), { method: 'POST', body: form })
+                                  if (!res.ok) throw new Error('Lỗi tải ảnh')
+                                  const data = await res.json()
+                                  if (data?.url) updateGiftItem(idx, 'imageUrl', data.url)
+                                } catch {
+                                  setGiftSaveError('Không thể tải ảnh lên. Thử lại hoặc dán link ảnh.')
+                                } finally {
+                                  setGiftImageUploadingIndex(null)
+                                }
+                                e.target.value = ''
+                              }}
+                            />
+                            {giftImageUploadingIndex === idx ? (
+                              <span className="animate-spin rounded-full h-4 w-4 border-2 border-slate-300 border-t-primary" />
+                            ) : (
+                              <span className="material-symbols-outlined text-[18px]">upload_file</span>
+                            )}
+                            <span>{giftImageUploadingIndex === idx ? 'Đang tải...' : 'Chọn từ máy'}</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {giftSaveError && <p className="text-sm text-red-600">{giftSaveError}</p>}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveGifts}
+                    disabled={giftSaving}
+                    className="flex-1 flex items-center justify-center gap-2 h-10 rounded-lg bg-primary text-white font-bold text-sm disabled:opacity-50"
+                  >
+                    {giftSaving ? <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />Đang lưu...</> : 'Lưu thay đổi'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => !giftSaving && setGiftModalOpen(false)}
+                    disabled={giftSaving}
+                    className="px-4 h-10 rounded-lg border border-slate-200 text-slate-700 font-medium text-sm hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

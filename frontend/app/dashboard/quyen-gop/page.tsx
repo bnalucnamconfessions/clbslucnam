@@ -1,10 +1,22 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
 import RequireAuth from '../../components/RequireAuth'
 import QuyenGopDashboardContent from '../../components/QuyenGopDashboardContent'
+import { canEditQuyenGop } from '../../../lib/permissions'
 
 export default function DashboardQuyenGopPage() {
+  const [canEdit, setCanEdit] = useState(false)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('userInfo')
+      const info = raw ? JSON.parse(raw) : {}
+      setCanEdit(canEditQuyenGop(info.clubPermission || 'user'))
+    } catch {
+      setCanEdit(false)
+    }
+  }, [])
   return (
     <RequireAuth>
       <div className="relative flex min-h-screen w-full flex-row bg-slate-50 text-slate-900 font-display overflow-hidden h-screen">
@@ -21,7 +33,7 @@ export default function DashboardQuyenGopPage() {
                 </p>
               </div>
             </header>
-            <QuyenGopDashboardContent />
+            <QuyenGopDashboardContent canEdit={canEdit} />
           </div>
         </main>
       </div>

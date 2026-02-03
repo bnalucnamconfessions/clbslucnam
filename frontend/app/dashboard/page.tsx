@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import Sidebar from '../components/Sidebar'
 import Header from '../components/Header'
 import RequireAuth from '../components/RequireAuth'
@@ -15,6 +16,19 @@ type DashboardStats = {
   borrowTodayChange: number
   borrowMonthChange: number
   activeMembersChange: number
+}
+
+type FundStats = {
+  totalBalance: number
+  totalIncomeMonth: number
+  totalExpenseMonth: number
+  pendingCount: number
+}
+
+type CampaignStats = {
+  raised: number
+  goal: number
+  supportCount: number
 }
 
 type TopReader = {
@@ -33,8 +47,15 @@ type OverdueBook = {
   daysOverdue: number
 }
 
+function formatVND(n: number): string {
+  return new Intl.NumberFormat('vi-VN').format(n)
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [fundStats, setFundStats] = useState<FundStats | null>(null)
+  const [campaignStats, setCampaignStats] = useState<CampaignStats | null>(null)
+  const [notificationCount, setNotificationCount] = useState(0)
   const [topReaders, setTopReaders] = useState<TopReader[]>([])
   const [overdue, setOverdue] = useState<OverdueBook[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,10 +65,13 @@ export default function DashboardPage() {
     try {
       setLoading(true)
       setError(null)
-      const [statsRes, readersRes, overdueRes] = await Promise.all([
+      const [statsRes, readersRes, overdueRes, fundRes, campaignRes, notifRes] = await Promise.all([
         fetch(apiUrl('/api/dashboard/stats')),
         fetch(apiUrl('/api/dashboard/top-readers')),
         fetch(apiUrl('/api/dashboard/overdue')),
+        fetch(apiUrl('/api/fund/stats')),
+        fetch(apiUrl('/api/quyen-gop/campaign')),
+        fetch(apiUrl('/api/notifications')),
       ])
       if (!statsRes.ok || !readersRes.ok || !overdueRes.ok) throw new Error('Lỗi tải dữ liệu')
       const [statsData, readersData, overdueData] = await Promise.all([
@@ -58,6 +82,28 @@ export default function DashboardPage() {
       setStats(statsData)
       setTopReaders(readersData)
       setOverdue(overdueData)
+
+      if (fundRes.ok) {
+        const fundData = await fundRes.json()
+        setFundStats({
+          totalBalance: fundData.totalBalance ?? 0,
+          totalIncomeMonth: fundData.totalIncomeMonth ?? 0,
+          totalExpenseMonth: fundData.totalExpenseMonth ?? 0,
+          pendingCount: fundData.pendingCount ?? 0,
+        })
+      }
+      if (campaignRes.ok) {
+        const campData = await campaignRes.json()
+        setCampaignStats({
+          raised: campData.raised ?? 0,
+          goal: campData.goal ?? 0,
+          supportCount: campData.supportCount ?? 0,
+        })
+      }
+      if (notifRes.ok) {
+        const notifData = await notifRes.json()
+        setNotificationCount(Array.isArray(notifData) ? notifData.length : 0)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Không kết nối được backend')
     } finally {
@@ -70,7 +116,7 @@ export default function DashboardPage() {
   }, [fetchDashboard])
 
   // Cập nhật khi quay lại tab hoặc mỗi 60 giây (giống các trang mạng realtime)
-  useRefetchOnFocusAndInterval(fetchDashboard, { intervalMs: 60 * 1000 })
+  useRefetchOnFocusAndInterval(fetchDashboard, { intervalMs: 20 * 1000 })
 
   const currentDate = new Date()
   const monthNames = ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
@@ -90,10 +136,10 @@ export default function DashboardPage() {
           <header className="px-4 md:px-6 lg:px-8 pt-4 md:pt-6 pb-6 border-b border-slate-200 flex flex-col md:flex-row flex-wrap justify-between items-start md:items-center gap-4 bg-white">
             <div className="flex flex-col gap-2">
               <h2 className="text-slate-900 text-3xl md:text-4xl font-black leading-tight tracking-[-0.033em]">
-                Dashboard Hoạt động Mượn & Trả Sách
+                Tổng quan
               </h2>
               <p className="text-slate-500 text-base font-normal leading-normal">
-                Tổng quan tình hình mượn trả và thành viên tích cực
+                Mượn trả sách, thu chi, quyên góp và hoạt động CLB
               </p>
             </div>
             <div className="flex gap-3 w-full md:w-auto items-center">
@@ -192,6 +238,112 @@ export default function DashboardPage() {
               </div>
             </section>
 
+            {/* Thu chi & Quyên góp & Thông báo */}
+            <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Tổng quỹ */}
+              <Link href="/dashboard/tai-chinh" className="flex flex-col gap-2 rounded-xl p-6 border border-emerald-200 bg-white hover:border-emerald-300 transition-colors group shadow-sm">
+                <div className="flex items-center justify-between">
+                  <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-emerald-600 transition-colors">
+                    Tổng quỹ hiện tại
+                  </p>
+                  <span className="material-symbols-outlined text-emerald-600 bg-emerald-500/10 p-1.5 rounded-lg">account_balance_wallet</span>
+                </div>
+                <p className="text-slate-900 text-2xl font-bold leading-tight">{formatVND(fundStats?.totalBalance ?? 0)} ₫</p>
+                <p className="text-emerald-600 text-xs font-medium">Thu trừ chi (đã xác nhận)</p>
+              </Link>
+
+              {/* Đơn chờ duyệt */}
+              <Link href="/dashboard/tai-chinh" className="flex flex-col gap-2 rounded-xl p-6 border border-amber-200 bg-white hover:border-amber-300 transition-colors group shadow-sm">
+                <div className="flex items-center justify-between">
+                  <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-amber-600 transition-colors">
+                    Đơn chờ duyệt
+                  </p>
+                  <span className="material-symbols-outlined text-amber-600 bg-amber-500/10 p-1.5 rounded-lg">pending_actions</span>
+                </div>
+                <p className="text-slate-900 text-3xl font-bold leading-tight">{fundStats?.pendingCount ?? 0}</p>
+                <p className="text-amber-600 text-xs font-medium">Yêu cầu thu chi cần xử lý</p>
+              </Link>
+
+              {/* Quyên góp */}
+              <Link href="/dashboard/quyen-gop" className="flex flex-col gap-2 rounded-xl p-6 border border-violet-200 bg-white hover:border-violet-300 transition-colors group shadow-sm">
+                <div className="flex items-center justify-between">
+                  <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-violet-600 transition-colors">
+                    Tiến độ quyên góp
+                  </p>
+                  <span className="material-symbols-outlined text-violet-600 bg-violet-500/10 p-1.5 rounded-lg">volunteer_activism</span>
+                </div>
+                <p className="text-slate-900 text-2xl font-bold leading-tight">
+                  {campaignStats && campaignStats.goal > 0
+                    ? `${Math.min(100, Math.round((campaignStats.raised / campaignStats.goal) * 100))}%`
+                    : '—'}
+                </p>
+                <p className="text-violet-600 text-xs font-medium">
+                  {formatVND(campaignStats?.raised ?? 0)} / {formatVND(campaignStats?.goal ?? 0)} ₫ · {campaignStats?.supportCount ?? 0} lượt ủng hộ
+                </p>
+              </Link>
+
+              {/* Thông báo */}
+              <Link href="/thong-bao" className="flex flex-col gap-2 rounded-xl p-6 border border-slate-200 bg-white hover:border-primary/50 transition-colors group shadow-sm">
+                <div className="flex items-center justify-between">
+                  <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-primary transition-colors">
+                    Thông báo
+                  </p>
+                  <span className="material-symbols-outlined text-primary bg-primary/10 p-1.5 rounded-lg">campaign</span>
+                </div>
+                <p className="text-slate-900 text-3xl font-bold leading-tight">{notificationCount}</p>
+                <p className="text-slate-500 text-xs font-medium">Tin đã đăng</p>
+              </Link>
+            </section>
+
+            {/* Shortcuts */}
+            <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-slate-900 text-lg font-bold leading-normal mb-4">Truy cập nhanh</h3>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="/muon"
+                  className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-primary hover:bg-blue-50 transition-colors group"
+                >
+                  <span className="material-symbols-outlined text-primary">book</span>
+                  <span className="text-sm font-medium text-slate-900 group-hover:text-primary">Mượn sách</span>
+                </Link>
+                <Link
+                  href="/tra"
+                  className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-primary hover:bg-blue-50 transition-colors group"
+                >
+                  <span className="material-symbols-outlined text-primary">assignment_return</span>
+                  <span className="text-sm font-medium text-slate-900 group-hover:text-primary">Trả sách</span>
+                </Link>
+                <Link
+                  href="/dashboard/tai-chinh"
+                  className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 transition-colors group"
+                >
+                  <span className="material-symbols-outlined text-emerald-600">payments</span>
+                  <span className="text-sm font-medium text-slate-900 group-hover:text-emerald-600">Thu chi</span>
+                </Link>
+                <Link
+                  href="/thong-bao"
+                  className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-primary hover:bg-blue-50 transition-colors group"
+                >
+                  <span className="material-symbols-outlined text-primary">campaign</span>
+                  <span className="text-sm font-medium text-slate-900 group-hover:text-primary">Thông báo</span>
+                </Link>
+                <Link
+                  href="/books"
+                  className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-primary hover:bg-blue-50 transition-colors group"
+                >
+                  <span className="material-symbols-outlined text-primary">library_books</span>
+                  <span className="text-sm font-medium text-slate-900 group-hover:text-primary">Kho sách</span>
+                </Link>
+                <Link
+                  href="/dashboard/xep-hang"
+                  className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-primary hover:bg-blue-50 transition-colors group"
+                >
+                  <span className="material-symbols-outlined text-primary">emoji_events</span>
+                  <span className="text-sm font-medium text-slate-900 group-hover:text-primary">Bảng xếp hạng</span>
+                </Link>
+              </div>
+            </section>
+
             {/* Chart and Top Readers */}
             <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Chart - placeholder khi chưa có dữ liệu */}
@@ -261,7 +413,7 @@ export default function DashboardPage() {
                     <p className="text-slate-500 text-sm">Cần gửi thông báo nhắc nhở ngay</p>
                   </div>
                 </div>
-                <button className="text-sm text-primary font-medium hover:text-blue-400">Xem tất cả</button>
+                <Link href="/tra" className="text-sm text-primary font-medium hover:text-blue-400">Xem tất cả</Link>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">

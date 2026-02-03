@@ -41,7 +41,7 @@ export default function QRPage() {
     fetchBooks()
   }, [])
 
-  useRefetchOnFocusAndInterval(fetchBooks, { intervalMs: 60 * 1000 })
+  useRefetchOnFocusAndInterval(fetchBooks, { intervalMs: 20 * 1000 })
 
   useEffect(() => {
     if (showPrintModal) fetchBooks()

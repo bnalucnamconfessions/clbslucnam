@@ -1,19 +1,40 @@
 # CLB Sách Lục Nam
 
-Hệ thống quản lý thư viện và hoạt động Câu lạc bộ Sách — gồm **frontend** (Next.js) và **backend** (Django).
+Hệ thống quản lý thư viện và hoạt động **Câu lạc bộ Sách và Hành động THPT Lục Nam** (BnA Lục Nam).
+
+## Tổng quan
+
+| Thành phần | Công nghệ | Mô tả |
+|------------|-----------|-------|
+| **Frontend** | Next.js 14, React 18, TypeScript, Tailwind | Giao diện web, đăng nhập (email + Google), dashboard |
+| **Backend** | Django REST Framework, MySQL | API REST |
+
+## Tính năng chính
+
+- **Đăng nhập / Đăng ký:** Email + mật khẩu, Google OAuth, quên mật khẩu
+- **Dashboard:** Thống kê tổng quan, sách quá hạn
+- **Kho sách & Mượn/Trả:** QR code, quản lý phiếu mượn
+- **Thành viên:** Phân quyền theo vai trò (Ban chủ nhiệm, Ban Quản lý sách, Ban Truyền thông, Ban NS-TC)
+- **Thông báo:** Gửi theo kênh/đối tượng, đánh dấu đã đọc
+- **Thu chi quỹ:** Giao dịch thu/chi, duyệt yêu cầu
+- **Bảng xếp hạng:** Top độc giả, quà tặng tháng
+- **Nhà tài trợ & Đối tác:** Nội dung trang công khai, chỉnh sửa qua dashboard
+- **Quyên góp:** Chiến dịch gây quỹ, form xác nhận chuyển khoản
+- **Hồ sơ cá nhân:** Thông tin, lịch sử mượn, lịch sử thao tác
 
 ## Cấu trúc dự án
 
 ```
 clbslucnam/
-├── frontend/          # Ứng dụng web Next.js 14 (React, TypeScript, Tailwind)
-├── backend/           # API Django (Python, MySQL)
+├── frontend/          # Next.js 14 (React, TypeScript, Tailwind)
+├── backend/           # Django API (Python, MySQL)
 ├── README.md          # File này
 └── .gitignore
 ```
 
-- **Frontend:** Giao diện người dùng, đăng nhập, dashboard, quản lý sách, thành viên, thông báo, thu chi, xếp hạng, hồ sơ cá nhân, lịch sử thao tác. Chi tiết: [frontend/README.md](frontend/README.md).
-- **Backend:** API REST (auth, sách, mượn/trả, thành viên, tài khoản, thông báo, thu chi, activity log). Chi tiết: [backend/README.md](backend/README.md).
+- Chi tiết frontend: [frontend/README.md](frontend/README.md)
+- Chi tiết backend: [backend/README.md](backend/README.md)
+- Phân quyền và chức năng: [docs/PHAN_QUYEN.md](docs/PHAN_QUYEN.md)
 
 ## Chạy nhanh (development)
 
@@ -32,15 +53,15 @@ clbslucnam/
    ```bash
    cd frontend
    npm install
-   # Tùy chọn: .env.local với NEXT_PUBLIC_API_URL=http://localhost:8000
+   # .env.local: NEXT_PUBLIC_API_URL=http://localhost:8000
    npm run dev
    ```
 
-3. Mở trình duyệt: [http://localhost:3000](http://localhost:3000). Đăng nhập và dùng app (cần backend chạy ở bước 1).
+3. Mở [http://localhost:3000](http://localhost:3000) — đăng nhập và sử dụng (cần backend chạy).
 
-## Yêu cầu
+## Yêu cầu hệ thống
 
-- **Node.js** (cho frontend)
-- **Python 3** + **MySQL** (cho backend)
+- **Node.js** — frontend
+- **Python 3** + **MySQL** — backend
 
-Chi tiết cài đặt, cấu hình MySQL, email, seed dữ liệu: xem [backend/README.md](backend/README.md) và [frontend/README.md](frontend/README.md).
+Chi tiết cài đặt, cấu hình MySQL, email, seed: [backend/README.md](backend/README.md) và [frontend/README.md](frontend/README.md).

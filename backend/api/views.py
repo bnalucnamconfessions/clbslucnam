@@ -17,8 +17,10 @@ from django.db.models import Q
 from .models import (
     Account,
     PasswordResetToken,
+    EmailVerificationCode,
     DashboardStats,
     TopReader,
+    RankingGiftConfig,
     OverdueBook,
     Book,
     Member,
@@ -27,7 +29,27 @@ from .models import (
     ActivityLog,
     BorrowRecord,
     FundTransaction,
+    DoiTacData,
+    DonationCampaign,
+    Donation,
 )
+
+# Map club_permission -> display label (dùng chung cho login, auth_me, google_auth_exchange)
+_ROLE_DISPLAY = {
+    "admin": "Quản trị viên",
+    "chairperson": "Chủ nhiệm",
+    "vice_chairperson": "Phó chủ nhiệm",
+    "head_book": "Trưởng ban Quản Lý Sách",
+    "vice_head_book": "Phó ban Quản Lý Sách",
+    "head_communication": "Trưởng ban Truyền thông - Đối Ngoại",
+    "vice_head_communication": "Phó ban Truyền thông - Đối Ngoại",
+    "head_hr_finance": "Trưởng ban Nhân sự - Tài Chính",
+    "vice_head_hr_finance": "Phó ban Nhân sự - Tài Chính",
+    "member_book": "Thành viên ban Quản lý sách",
+    "member_communication": "Thành viên ban Truyền thông - Đối Ngoại",
+    "member_hr_finance": "Thành viên ban Nhân sự - Tài Chính",
+    "user": "Người dùng",
+}
 
 
 @api_view(["GET"])
@@ -42,41 +64,54 @@ def health(request):
 @csrf_exempt
 @api_view(["POST"])
 def login(request):
-    """Đăng nhập - email + password từ Account. CSRF exempt để frontend gọi được."""
+    """Đăng nhập - email + password từ Account. CSRF exempt để frontend gọi được. Dùng constant-time so sánh mật khẩu để tránh timing leak."""
     username = (request.data.get("username") or "").strip()
     password = request.data.get("password", "")
 
-    # Đăng nhập bằng email + password từ Account
     acc = Account.objects.filter(email__iexact=username, provider="email").first()
-    if acc and acc.password_hash and check_password(password, acc.password_hash):
-        acc.last_login_at = timezone.now()
-        acc.save(update_fields=["last_login_at"])
-        _ROLE_DISPLAY = {"admin": "Quản trị viên", "chairperson": "Chủ nhiệm", "vice_chairperson": "Phó chủ nhiệm", "head_book": "Trưởng ban Quản Lý Sách", "vice_head_book": "Phó ban Quản Lý Sách", "head_communication": "Trưởng ban Truyền thông - Đối Ngoại", "vice_head_communication": "Phó ban Truyền thông - Đối Ngoại", "head_hr_finance": "Trưởng ban Nhân sự - Tài Chính", "vice_head_hr_finance": "Phó ban Nhân sự - Tài Chính", "member_book": "Thành viên ban Quản lý sách", "member_communication": "Thành viên ban Truyền thông - Đối Ngoại", "member_hr_finance": "Thành viên ban Nhân sự - Tài Chính", "user": "Người dùng"}
-        role_display = _ROLE_DISPLAY.get(acc.club_permission or "user", "Người dùng")
-        return Response({
-            "token": f"email-{acc.id}",
-            "fullName": acc.full_name or acc.email or "User",
-            "email": acc.email or "",
-            "role": role_display,
-            "clubPermission": acc.club_permission or "user",
-        })
-
-    return Response(
-        {"detail": "Tên đăng nhập hoặc mật khẩu không đúng."},
-        status=status.HTTP_401_UNAUTHORIZED,
-    )
+    # Luôn chạy check_password (kể cả khi không tìm thấy tài khoản) để tránh timing attack (phân biệt "email tồn tại" vs "email không tồn tại").
+    if not acc or not acc.password_hash:
+        check_password(password, make_password(""))
+        return Response(
+            {"detail": "Tên đăng nhập hoặc mật khẩu không đúng."},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    if not check_password(password, acc.password_hash):
+        return Response(
+            {"detail": "Tên đăng nhập hoặc mật khẩu không đúng."},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    acc.last_login_at = timezone.now()
+    acc.save(update_fields=["last_login_at"])
+    role_display = _ROLE_DISPLAY.get(acc.club_permission or "user", "Người dùng")
+    return Response({
+        "token": f"email-{acc.id}",
+        "fullName": acc.full_name or acc.email or "User",
+        "email": acc.email or "",
+        "role": role_display,
+        "clubPermission": acc.club_permission or "user",
+    })
 
 
 @api_view(["GET"])
 def auth_me(request):
-    """Trả về quyền hiện tại của user theo email (để các máy/tab tự động cập nhật khi admin đổi quyền). Gồm joinDate từ Member liên kết (NGÀY THAM GIA)."""
-    email = (request.GET.get("email") or request.GET.get("accountEmail") or "").strip()
-    if not email:
-        return Response({"detail": "Thiếu email"}, status=status.HTTP_400_BAD_REQUEST)
-    acc = Account.objects.filter(Q(email=email) | Q(display_email=email)).first()
-    if not acc:
-        return Response({"detail": "Không tìm thấy tài khoản"}, status=status.HTTP_404_NOT_FOUND)
-    _ROLE_DISPLAY = {"admin": "Quản trị viên", "chairperson": "Chủ nhiệm", "vice_chairperson": "Phó chủ nhiệm", "head_book": "Trưởng ban Quản Lý Sách", "vice_head_book": "Phó ban Quản Lý Sách", "head_communication": "Trưởng ban Truyền thông - Đối Ngoại", "vice_head_communication": "Phó ban Truyền thông - Đối Ngoại", "head_hr_finance": "Trưởng ban Nhân sự - Tài Chính", "vice_head_hr_finance": "Phó ban Nhân sự - Tài Chính", "member_book": "Thành viên ban Quản lý sách", "member_communication": "Thành viên ban Truyền thông - Đối Ngoại", "member_hr_finance": "Thành viên ban Nhân sự - Tài Chính", "user": "Người dùng"}
+    """Trả về quyền hiện tại của user. Ưu tiên Authorization: Bearer <token> (token dạng email-<id>), nếu không có thì dùng query email (kém bảo mật hơn)."""
+    acc = None
+    auth_header = request.META.get("HTTP_AUTHORIZATION") or ""
+    if auth_header.startswith("Bearer "):
+        token = (auth_header[7:] or "").strip()
+        if token.startswith("email-") and token[6:].isdigit():
+            try:
+                acc = Account.objects.get(pk=int(token[6:]))
+            except (ValueError, Account.DoesNotExist):
+                pass
+    if acc is None:
+        email = (request.GET.get("email") or request.GET.get("accountEmail") or "").strip()
+        if not email:
+            return Response({"detail": "Thiếu email hoặc token (Authorization: Bearer email-<id>)."}, status=status.HTTP_400_BAD_REQUEST)
+        acc = Account.objects.filter(Q(email=email) | Q(display_email=email)).first()
+        if not acc:
+            return Response({"detail": "Không tìm thấy tài khoản"}, status=status.HTTP_404_NOT_FOUND)
     perm = acc.club_permission or "user"
     role_display = _ROLE_DISPLAY.get(perm, "Người dùng")
     join_date_str = None
@@ -95,18 +130,134 @@ def auth_me(request):
 @csrf_exempt
 @api_view(["POST"])
 def register(request):
-    """Đăng ký tài khoản mới (email + password)."""
+    """Bước 1 đăng ký: gửi mã xác thực 6 chữ số qua email. Chưa tạo tài khoản."""
+    import secrets
+    from datetime import timedelta
+    from django.core.mail import send_mail
+
     data = request.data
-    email = (data.get("email") or "").strip().lower()
+    email = (data.get("email") or "").strip().lower()[:255]
     password = data.get("password", "")
-    full_name = (data.get("fullName") or data.get("full_name") or "").strip()
 
     if not email:
         return Response({"detail": "Vui lòng nhập email."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(email) > 254:
+        return Response({"detail": "Email không hợp lệ."}, status=status.HTTP_400_BAD_REQUEST)
     if not password or len(password) < 8:
         return Response({"detail": "Mật khẩu phải có ít nhất 8 ký tự."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(password) > 128:
+        return Response({"detail": "Mật khẩu không hợp lệ."}, status=status.HTTP_400_BAD_REQUEST)
     if Account.objects.filter(email=email, provider="email").exists():
         return Response({"detail": "Email đã được đăng ký."}, status=status.HTTP_400_BAD_REQUEST)
+    if Account.objects.filter(email=email, provider="google").exists():
+        return Response(
+            {"detail": "Email này đã được đăng ký qua Google. Vui lòng đăng nhập bằng Google.", "code": "already_google"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Xóa mã cũ cùng email (nếu có)
+    EmailVerificationCode.objects.filter(email=email).delete()
+    code = "".join(secrets.choice("0123456789") for _ in range(6))
+    expires_at = timezone.now() + timedelta(minutes=15)
+    EmailVerificationCode.objects.create(email=email, code=code, expires_at=expires_at)
+
+    subject = "Mã xác thực đăng ký - BnA Lục Nam"
+    body = f"""Xin chào,
+
+Bạn đang đăng ký tài khoản CLB Sách và Hành động.
+
+Mã xác thực của bạn là: {code}
+
+Mã có hiệu lực trong 15 phút. Không chia sẻ mã này với bất kỳ ai.
+
+— CLB Sách và Hành động THPT Lục Nam
+"""
+    html_body = f"""
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#f0f4f8;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f0f4f8;padding:24px;">
+<tr><td align="center">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:480px;background:#ffffff;border-radius:12px;box-shadow:0 4px 16px rgba(19,127,236,0.15);overflow:hidden;">
+<tr><td style="background:linear-gradient(135deg,#137fec 0%,#0d5bb5 100%);padding:28px 24px;text-align:center;">
+<h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:600;">Mã xác thực đăng ký</h1>
+<p style="margin:8px 0 0;color:rgba(255,255,255,0.9);font-size:14px;">BnA Lục Nam</p>
+</td></tr>
+<tr><td style="padding:32px 24px;text-align:center;">
+<p style="margin:0 0 16px;color:#1e293b;font-size:16px;line-height:1.6;">Mã xác thực của bạn là:</p>
+<p style="margin:0 0 24px;font-size:32px;font-weight:800;letter-spacing:8px;color:#137fec;">{code}</p>
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;">Mã có hiệu lực trong <strong>15 phút</strong>.</p>
+<p style="margin:0;color:#94a3b8;font-size:13px;">Không chia sẻ mã này với bất kỳ ai.</p>
+</td></tr>
+<tr><td style="padding:16px 24px;background:#f8fafc;text-align:center;color:#64748b;font-size:12px;">
+— CLB Sách và Hành động THPT Lục Nam
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>
+"""
+    email_sent = True
+    try:
+        sent = send_mail(
+            subject,
+            body,
+            getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@clbslucnam.local"),
+            [email],
+            fail_silently=False,
+            html_message=html_body,
+        )
+        if sent == 0:
+            email_sent = False
+    except Exception as e:
+        email_sent = False
+        if settings.DEBUG:
+            _safe_print(f"[DEBUG] Gửi email xác thực thất bại: {e}. Mã: {code}")
+    if not email_sent and settings.DEBUG:
+        _safe_print(f"\n[DEBUG] Mã xác thực đăng ký (không gửi được email): {code}\n")
+
+    return Response({
+        "sent": True,
+        "message": "Mã xác thực 6 chữ số đã gửi đến email của bạn. Vui lòng nhập mã để hoàn tất đăng ký.",
+    })
+
+
+@csrf_exempt
+@api_view(["POST"])
+def register_verify(request):
+    """Bước 2 đăng ký: xác thực mã 6 chữ số và tạo tài khoản."""
+    data = request.data
+    email = (data.get("email") or "").strip().lower()[:255]
+    code = (data.get("code") or "").strip()
+    password = data.get("password", "")
+    full_name = (data.get("fullName") or data.get("full_name") or "").strip()[:255]
+
+    if not email:
+        return Response({"detail": "Vui lòng nhập email."}, status=status.HTTP_400_BAD_REQUEST)
+    if not code or len(code) != 6 or not code.isdigit():
+        return Response({"detail": "Mã xác thực phải là 6 chữ số."}, status=status.HTTP_400_BAD_REQUEST)
+    if not password or len(password) < 8:
+        return Response({"detail": "Mật khẩu phải có ít nhất 8 ký tự."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(password) > 128:
+        return Response({"detail": "Mật khẩu không hợp lệ."}, status=status.HTTP_400_BAD_REQUEST)
+    if Account.objects.filter(email=email, provider="email").exists():
+        return Response({"detail": "Email đã được đăng ký."}, status=status.HTTP_400_BAD_REQUEST)
+    if Account.objects.filter(email=email, provider="google").exists():
+        return Response(
+            {"detail": "Email này đã được đăng ký qua Google. Vui lòng đăng nhập bằng Google.", "code": "already_google"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    rec = EmailVerificationCode.objects.filter(
+        email=email, code=code, expires_at__gt=timezone.now()
+    ).first()
+    if not rec:
+        return Response(
+            {"detail": "Mã xác thực không đúng hoặc đã hết hạn. Vui lòng thử gửi lại mã."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     if not full_name:
         full_name = email.split("@")[0].replace(".", " ").title()
@@ -118,6 +269,8 @@ def register(request):
         club_permission="user",
         password_hash=make_password(password),
     )
+    rec.delete()
+
     return Response({
         "id": acc.id,
         "email": acc.email,
@@ -369,7 +522,6 @@ def google_auth_exchange(request):
         acc.last_login_at = timezone.now()
         acc.save(update_fields=["full_name", "avatar_url", "last_login_at"])
         perm = acc.club_permission or "user"
-        _ROLE_DISPLAY = {"admin": "Quản trị viên", "chairperson": "Chủ nhiệm", "vice_chairperson": "Phó chủ nhiệm", "head_book": "Trưởng ban Quản Lý Sách", "vice_head_book": "Phó ban Quản Lý Sách", "head_communication": "Trưởng ban Truyền thông - Đối Ngoại", "vice_head_communication": "Phó ban Truyền thông - Đối Ngoại", "head_hr_finance": "Trưởng ban Nhân sự - Tài Chính", "vice_head_hr_finance": "Phó ban Nhân sự - Tài Chính", "member_book": "Thành viên ban Quản lý sách", "member_communication": "Thành viên ban Truyền thông - Đối Ngoại", "member_hr_finance": "Thành viên ban Nhân sự - Tài Chính", "user": "Người dùng"}
         role_display = _ROLE_DISPLAY.get(perm, "Người dùng")
         return Response({"token": app_token, "fullName": name, "email": email, "role": role_display, "clubPermission": perm, "picture": picture})
     except Exception:
@@ -425,13 +577,17 @@ def google_auth_callback(request):
 @api_view(["GET"])
 def account_list(request):
     """Danh sách tài khoản đã đăng nhập/đăng ký."""
-    rows = Account.objects.all()
+    rows = list(Account.objects.all())
+    member_user_ids = set(
+        Member.objects.filter(user_id__startswith="acc-").values_list("user_id", flat=True)
+    )
     for acc in rows:
         perm = getattr(acc, "club_permission", None) or "user"
         if perm != "user":
             user_id = f"acc-{acc.id}"
-            if not Member.objects.filter(user_id=user_id).exists():
+            if user_id not in member_user_ids:
                 _sync_account_member(acc, perm)
+                member_user_ids.add(user_id)
     return Response([
         {
             "id": r.id,
@@ -467,6 +623,29 @@ def account_upload_avatar(request):
             dst.write(chunk)
     base = request.build_absolute_uri("/").rstrip("/")
     url = f"{base}/{settings.MEDIA_URL.rstrip('/')}/avatars/{filename}"
+    return Response({"url": url})
+
+
+@csrf_exempt
+@api_view(["POST"])
+def upload_image(request):
+    """Tải ảnh từ máy lên (dùng cho đối tác, nhà tài trợ, v.v.), lưu vào media/uploads và trả về URL."""
+    if "file" not in request.FILES:
+        return Response({"detail": "Thiếu file ảnh"}, status=status.HTTP_400_BAD_REQUEST)
+    f = request.FILES["file"]
+    allowed = ("image/jpeg", "image/png", "image/gif", "image/webp")
+    if f.content_type not in allowed:
+        return Response({"detail": "Chỉ chấp nhận ảnh JPG, PNG, GIF, WebP"}, status=status.HTTP_400_BAD_REQUEST)
+    ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}.get(f.content_type, ".jpg")
+    uploads_dir = os.path.join(settings.MEDIA_ROOT, "uploads")
+    os.makedirs(uploads_dir, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}{ext}"
+    filepath = os.path.join(uploads_dir, filename)
+    with open(filepath, "wb") as dst:
+        for chunk in f.chunks():
+            dst.write(chunk)
+    base = request.build_absolute_uri("/").rstrip("/")
+    url = f"{base}/{settings.MEDIA_URL.rstrip('/')}/uploads/{filename}"
     return Response({"url": url})
 
 
@@ -526,7 +705,10 @@ MEMBER_TO_PERM = {(v[0], v[1]): k for k, v in PERM_TO_MEMBER.items()}
 @csrf_exempt
 @api_view(["PUT", "PATCH"])
 def account_update_permission(request, account_id):
-    """Cập nhật quyền và tự thêm vào Thành viên CLB nếu phân quyền khác người dùng."""
+    """Cập nhật quyền và tự thêm vào Thành viên CLB. Chỉ Ban chủ nhiệm. Body cần accountEmail (hoặc email)."""
+    acc_caller, err = _require_ban_chu_nhiem(request)
+    if err is not None:
+        return err
     try:
         acc = Account.objects.get(pk=account_id)
     except Account.DoesNotExist:
@@ -621,9 +803,55 @@ def dashboard_stats(request):
     })
 
 
+def _sync_top_readers_from_borrows():
+    """Cập nhật bảng TopReader từ BorrowRecord (số lần đã trả sách theo member)."""
+    from django.db.models import Count
+    # Đếm số phiếu mượn đã trả (return_date not null) theo member
+    qs = (
+        BorrowRecord.objects.filter(return_date__isnull=False)
+        .values("member_id")
+        .annotate(book_count=Count("id"))
+        .order_by("-book_count")
+    )
+    member_ids = [r["member_id"] for r in qs]
+    members = {m.id: m for m in Member.objects.filter(id__in=member_ids)}
+    # Lấy avatar từ Account nếu member có user_id acc-*
+    acc_ids = []
+    for m in members.values():
+        if m.user_id and str(m.user_id).startswith("acc-"):
+            try:
+                acc_ids.append(int(str(m.user_id).replace("acc-", "")))
+            except (ValueError, TypeError):
+                pass
+    accounts = {a.id: a for a in Account.objects.filter(id__in=acc_ids)} if acc_ids else {}
+    TopReader.objects.all().delete()
+    for rank, row in enumerate(qs, start=1):
+        member = members.get(row["member_id"])
+        if not member:
+            continue
+        name = member.name or "Thành viên"
+        avatar_url = member.avatar_url
+        if member.user_id and str(member.user_id).startswith("acc-"):
+            try:
+                aid = int(str(member.user_id).replace("acc-", ""))
+                acc = accounts.get(aid)
+                if acc and acc.avatar_url:
+                    avatar_url = acc.avatar_url
+            except (ValueError, TypeError):
+                pass
+        TopReader.objects.create(
+            name=name,
+            book_count=row["book_count"],
+            rank=rank,
+            avatar_url=avatar_url or None,
+        )
+
+
 @api_view(["GET"])
 def top_readers(request):
-    """Lấy danh sách độc giả tích cực."""
+    """Lấy danh sách độc giả tích cực (từ bảng TopReader)."""
+    if request.GET.get("refresh") == "1":
+        _sync_top_readers_from_borrows()
     rows = TopReader.objects.all().order_by("rank")
     return Response([
         {
@@ -635,6 +863,73 @@ def top_readers(request):
         }
         for r in rows
     ])
+
+
+@csrf_exempt
+@api_view(["POST"])
+def top_readers_refresh(request):
+    """Cập nhật bảng xếp hạng từ dữ liệu mượn/trả (BorrowRecord). Chỉ Ban chủ nhiệm. Body cần accountEmail (hoặc email)."""
+    acc, err = _require_ban_chu_nhiem(request)
+    if err is not None:
+        return err
+    _sync_top_readers_from_borrows()
+    return Response({"ok": True, "message": "Đã cập nhật bảng xếp hạng."})
+
+
+def _default_ranking_gifts():
+    """Payload mặc định cho quà tặng tháng (khi chưa có cấu hình)."""
+    return {
+        "intro": "Những phần quà hấp dẫn dành riêng cho Top 3 người đọc chăm chỉ nhất tháng này.",
+        "items": [
+            {"title": "Voucher Tiki 200k", "subtitle": "Dành cho Hạng #1", "imageUrl": "https://lh3.googleusercontent.com/aida-public/AB6AXuBOtF31QubkOC7P9HFHTtEF8vjq_YU6ysz1Z9Aq4Ezj0xlA2iwdY1UN3VhP8bQfddL8rRyYSUNo2wLdC_gZ2ofPFa4lFgXDs4RbccKwhPQPV4pUGFC9A5KZJu6PxSy6nFkBtXDCtnv5pHjaceQYPP0zlTCze5BidfOtyF_h7jOy7lFmsBLKJBqB--5lHwuqBR3T6ojInJEp9GvnEl_8EHlBrOV8EgN94CNnMZkyPmo2ARdDW7lAMhYpoPnH0yEPPnZRYeMVBT112arq"},
+            {"title": "Túi Tote CLB", "subtitle": "Dành cho Hạng #2 & #3", "imageUrl": "https://lh3.googleusercontent.com/aida-public/AB6AXuDvg1085xtY4_1_KsnQSW0nFfO-ak-He21GMTL4wY82I4ew6NQcmVWRI-DH_cd1eckM7lRkw-EXTdCqIuG6PGf9auFd6jNJDM53g94xHGhOATBwE2QfxU-ge5mg8ZOzQsZNds1gTjXe3W96_Wm8AKEZFVKpDLI439SarQLBDn9A5CRLEH9Y0JTe3_9OD2FdogysA86jaym6cEkuTAgg7SG94V1DGmiohv0ovOIRRYRSGq6jhrikZFFAP9GhOLaI3dCpOoJiqJYY1vIa"},
+            {"title": "Sách Tự Chọn", "subtitle": "Bốc thăm may mắn Top 10", "imageUrl": "https://lh3.googleusercontent.com/aida-public/AB6AXuAGr39HK8MuZX52nNDiS09fjibC6FfjZoyTLTfN3Id1Hoyo0VSEG12TFa8CKvTTI5WA1_aTnWEkaaBs-p-a5o6US4QJgvKXwerBRRxUnLLOaRUmNHZHjkNtTBDLylxJEkRjFUh3DpJK-58DH4KVqBuRLv0E0RBuZv8PiBmWlduwxt8_9RJR3vK2oJ43Y0GDkhqDDQGp-YrsIFjQ8j1ul0Ax-Z7Yq2_v7eVcqafgdHwszGY2W-uAAaXTRUt4C7Qv6kiYA6UFBsr_yK03"},
+        ],
+    }
+
+
+@api_view(["GET"])
+def ranking_gifts(request):
+    """Lấy cấu hình quà tặng tháng (bảng xếp hạng). Trả về mặc định nếu chưa có."""
+    row = RankingGiftConfig.objects.first()
+    if not row:
+        return Response(_default_ranking_gifts())
+    return Response({
+        "intro": row.intro or _default_ranking_gifts()["intro"],
+        "items": row.items if isinstance(row.items, list) else _default_ranking_gifts()["items"],
+    })
+
+
+@csrf_exempt
+@api_view(["PATCH", "PUT"])
+def ranking_gifts_update(request):
+    """Cập nhật cấu hình quà tặng tháng. Chỉ Ban chủ nhiệm. Body: intro?, items? (array of {title, subtitle, imageUrl})."""
+    acc, err = _require_ban_chu_nhiem(request)
+    if err is not None:
+        return err
+    data = request.data
+    intro = data.get("intro")
+    items = data.get("items")
+    row = RankingGiftConfig.objects.first()
+    if not row:
+        row = RankingGiftConfig(intro=_default_ranking_gifts()["intro"], items=_default_ranking_gifts()["items"])
+    if intro is not None and isinstance(intro, str):
+        row.intro = intro.strip() or row.intro
+    if items is not None and isinstance(items, list):
+        row.items = [
+            {
+                "title": (x.get("title") or "").strip() or "Quà",
+                "subtitle": (x.get("subtitle") or "").strip(),
+                "imageUrl": (x.get("imageUrl") or "").strip() or "",
+            }
+            for x in items
+            if isinstance(x, dict)
+        ]
+    row.save()
+    return Response({
+        "intro": row.intro,
+        "items": row.items,
+    })
 
 
 @api_view(["GET"])
@@ -755,7 +1050,15 @@ def member_list(request):
         user_id = f"acc-{acc.id}"
         if not Member.objects.filter(user_id=user_id).exists():
             _sync_account_member(acc, acc.club_permission or "user")
-    rows = Member.objects.all()
+    rows = list(Member.objects.all())
+    acc_ids = []
+    for r in rows:
+        if r.user_id and str(r.user_id).startswith("acc-"):
+            try:
+                acc_ids.append(int(str(r.user_id).replace("acc-", "")))
+            except (ValueError, TypeError):
+                pass
+    accounts_map = {a.id: a for a in Account.objects.filter(id__in=acc_ids)} if acc_ids else {}
     result = []
     for r in rows:
         avatar_url = r.avatar_url
@@ -763,7 +1066,7 @@ def member_list(request):
         if r.user_id and str(r.user_id).startswith("acc-"):
             try:
                 acc_id = int(str(r.user_id).replace("acc-", ""))
-                acc = Account.objects.filter(pk=acc_id).first()
+                acc = accounts_map.get(acc_id)
                 if acc:
                     if acc.avatar_url:
                         avatar_url = acc.avatar_url
@@ -871,25 +1174,6 @@ def member_delete(request, member_id):
 
 
 # --- Thông báo ---
-# #region agent log
-def _debug_log(location, message, data=None, hypothesis_id=None):
-    import json
-    import time
-    try:
-        with open(r"d:\code\clbslucnam\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "location": location,
-                "message": message,
-                "data": data or {},
-                "timestamp": int(time.time() * 1000),
-                "sessionId": "debug-session",
-                "hypothesisId": hypothesis_id,
-            }, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-# #endregion
-
-
 def _audience_to_permissions(audience):
     """Map audience string to list of club_permission values (đối tượng nhận tin)."""
     if not audience:
@@ -904,7 +1188,13 @@ def _audience_to_permissions(audience):
     if "nhân sự" in a or "tài chính" in a:
         return ["head_hr_finance", "vice_head_hr_finance", "member_hr_finance"]
     if "tất cả thành viên" in a:
-        return None  # all accounts
+        # Tất cả thành viên = mọi người có vai trò trong CLB, không bao gồm Người dùng
+        return [
+            "admin", "chairperson", "vice_chairperson",
+            "head_book", "vice_head_book", "member_book",
+            "head_communication", "vice_head_communication", "member_communication",
+            "head_hr_finance", "vice_head_hr_finance", "member_hr_finance",
+        ]
     if "người dùng" in a:
         return ["user"]
     return []
@@ -923,12 +1213,11 @@ def notification_list(request):
             ]
             read_account_ids = {rr.account_id for rr in read_receipts}
             perms = _audience_to_permissions(r.audience)
-            if perms is None:
-                intended = Account.objects.all()
-            elif perms:
-                intended = Account.objects.filter(club_permission__in=perms)
-            else:
-                intended = Account.objects.none()
+            intended = (
+                Account.objects.filter(club_permission__in=perms)
+                if perms
+                else Account.objects.none()
+            )
             unread_accounts = intended.exclude(id__in=read_account_ids)
             unread_by = [
                 {"name": acc.full_name or acc.email or "—", "email": acc.email or getattr(acc, "display_email", "") or ""}
@@ -972,26 +1261,15 @@ def notification_mark_read(request, notif_id):
     return Response({"ok": True, "read": created}, status=status.HTTP_200_OK)
 
 
-def _activity_log_debug(msg, data):
-    try:
-        import json
-        with open("d:/code/clbslucnam/.cursor/debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"message": msg, "data": data}, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-
-
 @api_view(["GET"])
 def activity_log_list(request):
     """Danh sách log thao tác của tài khoản (30 ngày gần nhất)."""
     email = (request.GET.get("email") or request.GET.get("accountEmail") or "").strip()
-    _activity_log_debug("activity_log_list", {"email": email, "email_len": len(email)})
     if not email:
         return Response({"detail": "Thiếu email"}, status=status.HTTP_400_BAD_REQUEST)
     acc = Account.objects.filter(email__iexact=email).first()
     if not acc:
         acc = Account.objects.filter(display_email__iexact=email).first()
-    _activity_log_debug("activity_log_list account", {"found": acc is not None, "acc_id": acc.id if acc else None})
     if not acc:
         return Response({"detail": "Không tìm thấy tài khoản"}, status=status.HTTP_404_NOT_FOUND)
     from datetime import timedelta
@@ -1001,7 +1279,6 @@ def activity_log_list(request):
         {"id": r.id, "action": r.action, "details": r.details or "", "createdAt": r.created_at.isoformat()}
         for r in rows
     ]
-    _activity_log_debug("activity_log_list result", {"count": len(out)})
     return Response(out)
 
 
@@ -1011,7 +1288,6 @@ def activity_log_create(request):
     """Ghi log thao tác (body: email hoặc accountEmail, action, details)."""
     email = (request.data.get("email") or request.data.get("accountEmail") or "").strip()
     action = (request.data.get("action") or "").strip()
-    _activity_log_debug("activity_log_create", {"email": email, "action": action, "body_keys": list(request.data.keys()) if hasattr(request.data, "keys") else []})
     if not email:
         return Response({"detail": "Thiếu email"}, status=status.HTTP_400_BAD_REQUEST)
     if not action:
@@ -1019,12 +1295,10 @@ def activity_log_create(request):
     acc = Account.objects.filter(email__iexact=email).first()
     if not acc:
         acc = Account.objects.filter(display_email__iexact=email).first()
-    _activity_log_debug("activity_log_create account", {"found": acc is not None})
     if not acc:
         return Response({"detail": "Không tìm thấy tài khoản"}, status=status.HTTP_404_NOT_FOUND)
     details = (request.data.get("details") or "").strip()
     ActivityLog.objects.create(account=acc, action=action, details=details)
-    _activity_log_debug("activity_log_create", {"created": True})
     return Response({"ok": True}, status=status.HTTP_201_CREATED)
 
 
@@ -1277,6 +1551,7 @@ def fund_transaction_list(request):
             "amount": int(r.amount),
             "requesterName": name,
             "requesterAvatarUrl": getattr(r.requester_account, "avatar_url", None) if r.requester_account else None,
+            "requesterEmail": (r.requester_account.email if r.requester_account else None) or None,
             "status": r.status,
         }
 
@@ -1321,14 +1596,23 @@ def fund_transaction_create(request):
         except (ValueError, TypeError):
             pass
 
+    created_by_email = (data.get("createdByEmail") or data.get("accountEmail") or "").strip()
+    requester_account = None
+    if created_by_email:
+        requester_account = Account.objects.filter(
+            Q(email__iexact=created_by_email) | Q(display_email__iexact=created_by_email)
+        ).first()
+
     obj = FundTransaction.objects.create(
         transaction_date=trans_date,
         content=content,
         type=trans_type,
         amount=amount,
         requester_name=requester_name,
+        requester_account=requester_account,
         status=FundTransaction.STATUS_PENDING,
     )
+    requester_email = (obj.requester_account.email if obj.requester_account else None) or None
     return Response({
         "id": obj.id,
         "transactionDate": obj.transaction_date.isoformat(),
@@ -1336,6 +1620,7 @@ def fund_transaction_create(request):
         "type": obj.type,
         "amount": int(obj.amount),
         "requesterName": obj.requester_name,
+        "requesterEmail": requester_email,
         "status": obj.status,
     }, status=status.HTTP_201_CREATED)
 
@@ -1356,6 +1641,7 @@ def fund_transaction_detail(request, transaction_id):
         "amount": int(r.amount),
         "requesterName": name,
         "requesterAvatarUrl": getattr(r.requester_account, "avatar_url", None) if r.requester_account else None,
+        "requesterEmail": (r.requester_account.email if r.requester_account else None) or None,
         "status": r.status,
         "createdAt": r.created_at.isoformat() if r.created_at else None,
     })
@@ -1392,6 +1678,7 @@ def fund_transaction_update(request, transaction_id):
         except (TypeError, ValueError):
             pass
     obj.save()
+    requester_email = (obj.requester_account.email if obj.requester_account else None) or None
     return Response({
         "id": obj.id,
         "transactionDate": obj.transaction_date.isoformat(),
@@ -1399,5 +1686,434 @@ def fund_transaction_update(request, transaction_id):
         "type": obj.type,
         "amount": int(obj.amount),
         "requesterName": obj.requester_name,
+        "requesterEmail": requester_email,
         "status": obj.status,
     })
+
+
+# --- Nhà tài trợ & Đối tác ---
+DEFAULT_DOI_TAC = {
+    "sponsorsGold": [
+        {"name": "TechEdu Solutions", "description": "Đơn vị cung cấp giải pháp công nghệ giáo dục hàng đầu.", "image": "", "icon": "verified"},
+        {"name": "NXB Tri Thức Trẻ", "description": "Đối tác cung cấp nguồn sách bản quyền phong phú.", "image": "", "icon": "school"},
+    ],
+    "partnersStrategic": [
+        {"name": "Innovation Hub", "desc": "Hỗ trợ không gian làm việc nhóm.", "image": ""},
+        {"name": "Coffee & Books", "desc": "Tài trợ voucher đồ uống.", "image": ""},
+    ],
+    "partnersCommunity": [
+        {"name": "BookWorm", "icon": "menu_book"},
+        {"name": "Global Lang", "icon": "language"},
+    ],
+}
+
+
+@api_view(["GET"])
+def doi_tac_get(request):
+    """Lấy nội dung trang Nhà tài trợ & Đối tác."""
+    row = DoiTacData.objects.filter(key="data").first()
+    if not row or not row.data:
+        return Response(DEFAULT_DOI_TAC)
+    data = dict(row.data)
+    data.setdefault("sponsorsGold", DEFAULT_DOI_TAC["sponsorsGold"])
+    data.setdefault("partnersStrategic", DEFAULT_DOI_TAC["partnersStrategic"])
+    data.setdefault("partnersCommunity", DEFAULT_DOI_TAC["partnersCommunity"])
+    return Response(data)
+
+
+@csrf_exempt
+@api_view(["PUT", "PATCH"])
+def doi_tac_update(request):
+    """Cập nhật nội dung trang Nhà tài trợ & Đối tác. Chỉ BCN + Ban NS-TC. Body cần accountEmail (hoặc email)."""
+    acc, err = _require_doi_tac_edit(request)
+    if err is not None:
+        return err
+    data = request.data or {}
+    row, _ = DoiTacData.objects.get_or_create(key="data", defaults={"data": DEFAULT_DOI_TAC})
+    current = dict(row.data) if row.data else {}
+    if "sponsorsGold" in data and isinstance(data["sponsorsGold"], list):
+        current["sponsorsGold"] = data["sponsorsGold"]
+    if "partnersStrategic" in data and isinstance(data["partnersStrategic"], list):
+        current["partnersStrategic"] = data["partnersStrategic"]
+    if "partnersCommunity" in data and isinstance(data["partnersCommunity"], list):
+        current["partnersCommunity"] = data["partnersCommunity"]
+    row.data = current
+    row.save(update_fields=["data", "updated_at"])
+    return Response(current)
+
+
+# --- Quyên góp ---
+# Chỉ Ban chủ nhiệm (QTV, Chủ nhiệm, Phó Chủ nhiệm) được tạo/sửa chiến dịch.
+QUYEN_GOP_EDIT_PERMISSIONS = ("admin", "chairperson", "vice_chairperson")
+
+
+def _require_ban_chu_nhiem(request):
+    """Lấy tài khoản từ request (accountEmail/email) và kiểm tra thuộc Ban chủ nhiệm. Trả về (account, None) hoặc (None, Response)."""
+    data = getattr(request, "data", None) or {}
+    if not isinstance(data, dict):
+        data = {}
+    email = (
+        (data.get("accountEmail") or data.get("email") or "")
+        or (request.GET.get("accountEmail") or request.GET.get("email") or "")
+    ).strip()
+    if not email:
+        return None, Response(
+            {"detail": "Thiếu email tài khoản (accountEmail)."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    acc = Account.objects.filter(
+        Q(email__iexact=email) | Q(display_email__iexact=email)
+    ).first()
+    if not acc:
+        return None, Response(
+            {"detail": "Không tìm thấy tài khoản."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    perm = (acc.club_permission or "user").strip().lower()
+    if perm not in QUYEN_GOP_EDIT_PERMISSIONS:
+        return None, Response(
+            {"detail": "Chỉ Ban chủ nhiệm (Quản trị viên, Chủ nhiệm, Phó Chủ nhiệm) được thực hiện thao tác này."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return acc, None
+
+
+# Đối tác: Ban chủ nhiệm + Ban Nhân sự - Tài Chính (khớp frontend DOI_TAC_CAN_EDIT).
+DOI_TAC_EDIT_PERMISSIONS = (
+    "admin", "chairperson", "vice_chairperson",
+    "head_hr_finance", "vice_head_hr_finance", "member_hr_finance",
+)
+
+
+def _require_doi_tac_edit(request):
+    """Lấy tài khoản từ request và kiểm tra được phép chỉnh sửa Đối tác. Trả về (account, None) hoặc (None, Response)."""
+    data = getattr(request, "data", None) or {}
+    if not isinstance(data, dict):
+        data = {}
+    email = (
+        (data.get("accountEmail") or data.get("email") or "")
+        or (request.GET.get("accountEmail") or request.GET.get("email") or "")
+    ).strip()
+    if not email:
+        return None, Response(
+            {"detail": "Thiếu email tài khoản (accountEmail)."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    acc = Account.objects.filter(
+        Q(email__iexact=email) | Q(display_email__iexact=email)
+    ).first()
+    if not acc:
+        return None, Response(
+            {"detail": "Không tìm thấy tài khoản."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    perm = (acc.club_permission or "user").strip().lower()
+    if perm not in DOI_TAC_EDIT_PERMISSIONS:
+        return None, Response(
+            {"detail": "Chỉ Ban chủ nhiệm và Ban Nhân sự - Tài Chính được chỉnh sửa trang Đối tác."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return acc, None
+
+
+@api_view(["GET"])
+def quyen_gop_campaigns_list(request):
+    """Danh sách tất cả chiến dịch (cho dashboard / chỉnh sửa)."""
+    from django.db.models import Sum, Count
+    rows = (
+        DonationCampaign.objects.annotate(
+            _raised=Sum("donations__amount"),
+            _support_count=Count("donations"),
+        )
+        .order_by("-created_at")
+    )
+    out = []
+    for c in rows:
+        raised = int(c._raised or 0)
+        support_count = c._support_count or 0
+        out.append({
+            "id": c.id,
+            "title": c.title,
+            "description": c.description,
+            "goal": int(c.goal),
+            "bannerUrl": c.banner_url,
+            "startDate": c.start_date.isoformat() if c.start_date else None,
+            "endDate": c.end_date.isoformat() if c.end_date else None,
+            "isActive": c.is_active,
+            "raised": raised,
+            "supportCount": support_count,
+            "createdAt": c.created_at.isoformat() if c.created_at else None,
+            "updatedAt": c.updated_at.isoformat() if c.updated_at else None,
+        })
+    return Response(out)
+
+
+@api_view(["GET"])
+def quyen_gop_campaign_detail(request, campaign_id):
+    """Chi tiết một chiến dịch (cho form chỉnh sửa)."""
+    try:
+        c = DonationCampaign.objects.get(pk=campaign_id)
+    except DonationCampaign.DoesNotExist:
+        return Response({"detail": "Chiến dịch không tồn tại."}, status=status.HTTP_404_NOT_FOUND)
+    from django.db.models import Sum, Count
+    agg = Donation.objects.filter(campaign=c).aggregate(total=Sum("amount"), count=Count("id"))
+    raised = int(agg["total"] or 0)
+    support_count = agg["count"] or 0
+    return Response({
+        "id": c.id,
+        "title": c.title,
+        "description": c.description,
+        "goal": int(c.goal),
+        "bannerUrl": c.banner_url,
+        "startDate": c.start_date.isoformat() if c.start_date else None,
+        "endDate": c.end_date.isoformat() if c.end_date else None,
+        "isActive": c.is_active,
+        "raised": raised,
+        "supportCount": support_count,
+        "createdAt": c.created_at.isoformat() if c.created_at else None,
+        "updatedAt": c.updated_at.isoformat() if c.updated_at else None,
+    })
+
+
+@csrf_exempt
+@api_view(["POST"])
+def quyen_gop_campaign_create(request):
+    """Tạo chiến dịch quyên góp mới. Chỉ Ban chủ nhiệm. Body cần accountEmail (hoặc email)."""
+    acc, err = _require_ban_chu_nhiem(request)
+    if err is not None:
+        return err
+    data = request.data
+    title = (data.get("title") or "").strip()
+    if not title:
+        return Response({"detail": "Vui lòng nhập tiêu đề chiến dịch."}, status=status.HTTP_400_BAD_REQUEST)
+    from decimal import Decimal
+    goal_raw = data.get("goal")
+    try:
+        goal = Decimal(str(goal_raw)) if goal_raw is not None else Decimal("0")
+        if goal < 0:
+            goal = Decimal("0")
+    except (TypeError, ValueError):
+        goal = Decimal("0")
+    start_date = None
+    end_date = None
+    if data.get("startDate"):
+        try:
+            start_date = date.fromisoformat(str(data["startDate"])[:10])
+        except (ValueError, TypeError):
+            pass
+    if data.get("endDate"):
+        try:
+            end_date = date.fromisoformat(str(data["endDate"])[:10])
+        except (ValueError, TypeError):
+            pass
+    c = DonationCampaign.objects.create(
+        title=title,
+        description=(data.get("description") or "").strip(),
+        goal=goal,
+        banner_url=(data.get("bannerUrl") or data.get("banner_url") or "").strip() or None,
+        start_date=start_date,
+        end_date=end_date,
+        is_active=bool(data.get("isActive", True)),
+    )
+    return Response({
+        "id": c.id,
+        "title": c.title,
+        "goal": int(c.goal),
+        "isActive": c.is_active,
+    }, status=status.HTTP_201_CREATED)
+
+
+@csrf_exempt
+@api_view(["PUT", "PATCH"])
+def quyen_gop_campaign_update(request, campaign_id):
+    """Chỉnh sửa chiến dịch quyên góp. Chỉ Ban chủ nhiệm. Body cần accountEmail (hoặc email)."""
+    acc, err = _require_ban_chu_nhiem(request)
+    if err is not None:
+        return err
+    try:
+        c = DonationCampaign.objects.get(pk=campaign_id)
+    except DonationCampaign.DoesNotExist:
+        return Response({"detail": "Chiến dịch không tồn tại."}, status=status.HTTP_404_NOT_FOUND)
+    data = request.data
+    if "title" in data and isinstance(data["title"], str):
+        c.title = data["title"].strip() or c.title
+    if "description" in data:
+        c.description = (data.get("description") or "").strip()
+    if "goal" in data:
+        try:
+            from decimal import Decimal
+            g = Decimal(str(data["goal"]))
+            if g >= 0:
+                c.goal = g
+        except (TypeError, ValueError):
+            pass
+    if "bannerUrl" in data or "banner_url" in data:
+        c.banner_url = (data.get("bannerUrl") or data.get("banner_url") or "").strip() or None
+    if "startDate" in data:
+        try:
+            c.start_date = date.fromisoformat(str(data["startDate"])[:10]) if data.get("startDate") else None
+        except (ValueError, TypeError):
+            pass
+    if "endDate" in data:
+        try:
+            c.end_date = date.fromisoformat(str(data["endDate"])[:10]) if data.get("endDate") else None
+        except (ValueError, TypeError):
+            pass
+    if "isActive" in data:
+        c.is_active = bool(data.get("isActive"))
+    c.save()
+    return Response({
+        "id": c.id,
+        "title": c.title,
+        "goal": int(c.goal),
+        "isActive": c.is_active,
+        "updatedAt": c.updated_at.isoformat() if c.updated_at else None,
+    })
+
+
+@api_view(["GET"])
+def quyen_gop_campaign(request):
+    """Lấy chiến dịch quyên góp đang active hoặc mới nhất (cho trang công khai)."""
+    campaign = (
+        DonationCampaign.objects.filter(is_active=True).first()
+        or DonationCampaign.objects.first()
+    )
+    if not campaign:
+        from decimal import Decimal
+        return Response({
+            "id": None,
+            "title": "Chung tay xây dựng thư viện tri thức",
+            "description": "",
+            "goal": 20000000,
+            "bannerUrl": None,
+            "startDate": None,
+            "endDate": None,
+            "raised": 0,
+            "supportCount": 0,
+            "topDonor": None,
+            "daysLeft": None,
+        })
+    from django.db.models import Sum, Count
+    agg = Donation.objects.filter(campaign=campaign).aggregate(
+        total=Sum("amount"), count=Count("id")
+    )
+    raised = int(agg["total"] or 0)
+    support_count = agg["count"] or 0
+    top_donation = (
+        Donation.objects.filter(campaign=campaign)
+        .exclude(donor_name__iexact="Ẩn danh")
+        .order_by("-amount")
+        .first()
+    )
+    top_donor = top_donation.donor_name if top_donation else None
+    days_left = None
+    if campaign.end_date:
+        from datetime import date
+        delta = (campaign.end_date - date.today()).days
+        days_left = max(0, delta)
+    return Response({
+        "id": campaign.id,
+        "title": campaign.title,
+        "description": campaign.description,
+        "goal": int(campaign.goal),
+        "bannerUrl": campaign.banner_url,
+        "startDate": campaign.start_date.isoformat() if campaign.start_date else None,
+        "endDate": campaign.end_date.isoformat() if campaign.end_date else None,
+        "raised": raised,
+        "supportCount": support_count,
+        "topDonor": top_donor,
+        "daysLeft": days_left,
+    })
+
+
+@api_view(["GET"])
+def quyen_gop_donations_list(request):
+    """Danh sách đóng góp (công khai hoặc theo campaign_id)."""
+    campaign_id = request.GET.get("campaignId") or request.GET.get("campaign_id")
+    qs = Donation.objects.all().order_by("-created_at")
+    if campaign_id:
+        try:
+            qs = qs.filter(campaign_id=int(campaign_id))
+        except (ValueError, TypeError):
+            pass
+    page = max(1, int(request.GET.get("page") or 1))
+    page_size = max(1, min(50, int(request.GET.get("page_size") or 20)))
+    total = qs.count()
+    start = (page - 1) * page_size
+    rows = qs[start : start + page_size]
+    return Response({
+        "results": [
+            {
+                "id": r.id,
+                "donorName": r.donor_name,
+                "amount": int(r.amount),
+                "message": r.message or "",
+                "isAnonymous": r.is_anonymous,
+                "createdAt": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+        "total": total,
+        "page": page,
+        "pageSize": page_size,
+    })
+
+
+@csrf_exempt
+@api_view(["POST"])
+def quyen_gop_donate(request):
+    """Gửi xác nhận đã chuyển khoản quyên góp."""
+    from decimal import Decimal
+    data = request.data
+    amount_raw = data.get("amount")
+    donor_name = (data.get("donorName") or data.get("senderName") or "").strip()
+    message = (data.get("message") or "").strip()
+    is_anonymous = bool(data.get("anonymous") or data.get("isAnonymous"))
+    campaign_id = data.get("campaignId") or data.get("campaign_id")
+
+    try:
+        amount = Decimal(str(amount_raw))
+        if amount <= 0:
+            raise ValueError("amount must be positive")
+    except (TypeError, ValueError):
+        return Response(
+            {"detail": "Số tiền không hợp lệ (phải là số dương)."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not donor_name and not is_anonymous:
+        return Response(
+            {"detail": "Vui lòng nhập tên người gửi hoặc chọn ủng hộ ẩn danh."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    display_name = "Ẩn danh" if is_anonymous else (donor_name or "Ẩn danh")
+
+    campaign = None
+    if campaign_id:
+        try:
+            campaign = DonationCampaign.objects.filter(pk=int(campaign_id)).first()
+        except (ValueError, TypeError):
+            pass
+    if not campaign:
+        campaign = DonationCampaign.objects.filter(is_active=True).first() or DonationCampaign.objects.first()
+
+    account = None
+    email = (data.get("accountEmail") or data.get("email") or "").strip()
+    if email:
+        account = Account.objects.filter(
+            Q(email__iexact=email) | Q(display_email__iexact=email)
+        ).first()
+
+    obj = Donation.objects.create(
+        campaign=campaign,
+        donor_name=display_name,
+        amount=amount,
+        message=message,
+        is_anonymous=is_anonymous,
+        account=account,
+    )
+    return Response({
+        "id": obj.id,
+        "donorName": obj.donor_name,
+        "amount": int(obj.amount),
+        "createdAt": obj.created_at.isoformat() if obj.created_at else None,
+    }, status=status.HTTP_201_CREATED)

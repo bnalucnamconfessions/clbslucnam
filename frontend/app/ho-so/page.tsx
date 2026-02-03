@@ -169,12 +169,16 @@ export default function HoSoPage() {
   useEffect(() => {
     const syncRoleFromBackend = async () => {
       try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
         const s = localStorage.getItem('userInfo')
         if (!s) return
         const parsed = JSON.parse(s)
         const email = (parsed.accountEmail || parsed.email || '').trim()
-        if (!email) return
-        const res = await fetch(apiUrl(`/api/auth/me?email=${encodeURIComponent(email)}`), { credentials: 'include' })
+        if (!token && !email) return
+        const url = email ? apiUrl(`/api/auth/me?email=${encodeURIComponent(email)}`) : apiUrl('/api/auth/me')
+        const headers: HeadersInit = { 'Content-Type': 'application/json' }
+        if (token) headers['Authorization'] = `Bearer ${token}`
+        const res = await fetch(url, { credentials: 'include', headers })
         if (!res.ok) return
         const data = await res.json()
         const newRole = data.role || parsed.role || 'Người dùng'
@@ -386,11 +390,6 @@ export default function HoSoPage() {
                     <span className="material-symbols-outlined text-[18px]">qr_code_2</span>
                     <span className="truncate">Tạo mã QR</span>
                   </button>
-                  {['admin', 'chairperson', 'vice_chairperson', 'head_book', 'head_communication', 'head_hr_finance'].includes(clubPermission) && (
-                    <button className="flex flex-1 md:flex-none cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-[#137fec] hover:bg-[#0f6fd6] text-white text-sm font-bold tracking-[0.015em] gap-2 transition-all shadow-[0_4px_6px_-1px_rgba(19,127,236,0.2)] leading-none">
-                      Phân quyền
-                    </button>
-                  )}
                 </div>
               </div>
             </div>

@@ -73,7 +73,7 @@ export default function MuonPage() {
     fetchData()
   }, [fetchData])
 
-  useRefetchOnFocusAndInterval(fetchData, { intervalMs: 60 * 1000 })
+  useRefetchOnFocusAndInterval(fetchData, { intervalMs: 20 * 1000 })
 
   const selectedMember = inputMode === 'qr'
     ? members.find(m => m.userId === memberId.trim())

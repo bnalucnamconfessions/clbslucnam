@@ -59,7 +59,7 @@ export default function BooksPage() {
     fetchBooks()
   }, [])
 
-  useRefetchOnFocusAndInterval(fetchBooks, { intervalMs: 60 * 1000 })
+  useRefetchOnFocusAndInterval(fetchBooks, { intervalMs: 20 * 1000 })
 
   const handleDeleteBook = async (book: BookItem) => {
     if (!confirm(`Bạn có chắc muốn xóa sách "${book.title}"?`)) return

@@ -1,42 +1,58 @@
 # Frontend - CLB Sách Lục Nam
 
-Frontend application được xây dựng với Next.js 14 và React.
+Ứng dụng frontend được xây dựng với **Next.js 14** và **React 18**, kết nối với API Django backend.
 
 ## Cấu trúc thư mục
 
 ```
 frontend/
 ├── app/                    # Next.js App Router
-│   ├── components/         # React components (Sidebar, ThuChiContent, XepHangContent, ...)
+│   ├── components/         # React components
+│   │   ├── DoiTacContent.tsx       # Trang Nhà tài trợ & Đối tác
+│   │   ├── FontLoader.tsx          # Tải font Material Symbols
+│   │   ├── Header.tsx, PublicHeader.tsx
+│   │   ├── QRCodeTable.tsx, QRForm.tsx, QRScanner.tsx
+│   │   ├── QuyenGopContent.tsx     # Trang Quyên góp công khai
+│   │   ├── QuyenGopDashboardContent.tsx  # Dashboard quản lý quyên góp
+│   │   ├── RequireAuth.tsx         # Bảo vệ route, xử lý token OAuth
+│   │   ├── Sidebar.tsx             # Menu điều hướng
+│   │   ├── StatsCards.tsx
+│   │   ├── ThuChiContent.tsx       # Thu chi quỹ
+│   │   └── XepHangContent.tsx      # Bảng xếp hạng
 │   ├── api/                # API routes (auth/google/callback, qr-image)
-│   ├── dang-nhap/          # Đăng nhập / Đăng ký
+│   ├── dang-nhap/          # Đăng nhập / Đăng ký (email + Google)
 │   ├── quen-mat-khau/      # Quên mật khẩu
 │   ├── dat-lai-mat-khau/   # Đặt lại mật khẩu (qua link email)
-│   ├── dashboard/          # Khu vực quản trị (tổng quan, tài chính, xếp hạng, đối tác, quyên góp)
+│   ├── dashboard/          # Khu vực quản trị
+│   │   ├── page.tsx        # Tổng quan
+│   │   ├── tai-chinh/      # Thu chi quỹ
+│   │   ├── xep-hang/       # Bảng xếp hạng
+│   │   ├── doi-tac/        # Nhà tài trợ & Đối tác
+│   │   └── quyen-gop/      # Quản lý chiến dịch quyên góp
 │   ├── ho-so/              # Hồ sơ cá nhân (thông tin, lịch sử mượn, lịch sử thao tác)
-│   ├── thanh-vien/         # Thành viên CLB & Tài khoản đăng nhập (phân quyền, lịch sử thao tác)
+│   ├── thanh-vien/         # Thành viên CLB & Tài khoản (phân quyền)
 │   ├── thong-bao/          # Thông báo (kênh, đăng bài, đánh dấu đã đọc)
 │   ├── books/              # Kho sách
 │   ├── qr/                 # Trang tạo mã QR
 │   ├── muon/               # Trang mượn sách
 │   ├── tra/                # Trang trả sách
-│   ├── doi-tac/            # Trang công khai: Đối tác
-│   ├── quyen-gop/          # Trang công khai: Quyên góp
+│   ├── doi-tac/            # Trang công khai: Nhà tài trợ & Đối tác
+│   ├── quyen-gop/          # Trang công khai: Quyên góp (chiến dịch, form ủng hộ)
 │   ├── xep-hang/           # Trang công khai: Bảng xếp hạng
-│   ├── layout.tsx          # Root layout
-│   ├── page.tsx            # Home page
-│   └── globals.css         # Global styles
-├── lib/                    # Utilities
-│   ├── api.ts              # API base URL
-│   ├── activityLog.ts      # Ghi lịch sử thao tác (POST /api/activity-log/create)
-│   ├── permissions.ts      # Phân quyền (clubPermission, kênh thông báo, menu)
-│   └── refetch.ts          # Refetch khi quay lại tab + polling
+│   ├── layout.tsx
+│   ├── page.tsx
+│   └── globals.css
+├── lib/
+│   ├── api.ts              # API base URL (NEXT_PUBLIC_API_URL)
+│   ├── activityLog.ts      # Ghi lịch sử thao tác
+│   ├── permissions.ts      # Phân quyền (clubPermission, menu, kênh thông báo)
+│   └── refetch.ts          # useRefetchOnFocusAndInterval — refetch khi quay tab + polling
 ├── public/
 ├── package.json
 ├── tsconfig.json
 ├── next.config.js
 ├── tailwind.config.js
-├── postcss.config.js
+└── postcss.config.js
 ```
 
 ## Liên kết với Backend
@@ -79,6 +95,13 @@ Backend nằm ở thư mục `backend/` (cùng cấp với `frontend/`). Cần c
 
 Chi tiết MySQL, seed dữ liệu, admin: xem **backend/README.md**.
 
+### API endpoints liên quan
+
+- Đăng nhập: `POST /api/auth/login`
+- Chiến dịch quyên góp: `GET /api/quyen-gop/campaign`, `GET /api/quyen-gop/donations`, `POST /api/quyen-gop/donate`
+- Nhà tài trợ & Đối tác: `GET /api/doi-tac`, `PATCH /api/doi-tac/update`
+- Thu chi: `GET /api/fund/stats`, `GET /api/fund/transactions`, …
+
 ## Cài đặt
 
 ```bash
@@ -114,22 +137,32 @@ npm start
 
 Các trang mạng như Facebook có cảm giác "realtime" vì họ dùng **WebSocket** (server đẩy dữ liệu ngay khi có thay đổi), **polling** (client gọi API định kỳ), hoặc **refetch khi quay lại tab**. Ứng dụng này mặc định chỉ tải dữ liệu **một lần khi mở trang**, nên trước đây phải F5 mới thấy cập nhật.
 
-Đã bổ sung và **áp dụng cho tất cả trang** có tải dữ liệu:
+Đã bổ sung và áp dụng cho các trang có tải dữ liệu:
 
-- **Refetch khi quay lại tab:** Khi bạn chuyển sang tab khác rồi quay lại, trang tự gọi lại API để lấy dữ liệu mới.
-- **Polling nhẹ:** Mỗi trang tự làm mới dữ liệu theo chu kỳ (45–60 giây tùy trang).
+- **Refetch khi quay lại tab:** Khi chuyển sang tab khác rồi quay lại, trang tự gọi lại API.
+- **Polling:** Làm mới dữ liệu mỗi **20 giây** (`intervalMs: 20 * 1000`).
 
-Trang đã bật: Dashboard, Thông báo, Kho sách, Mã QR, Mượn sách, Trả sách, Thành viên, Tài chính (Thu Chi), Xếp hạng. Hook dùng chung: `lib/refetch.ts` — `useRefetchOnFocusAndInterval(fetchFn, { intervalMs })`.
+**Trang đã bật:** Dashboard, Thông báo, Kho sách, Mã QR, Mượn sách, Trả sách, Thành viên, Tài chính (Thu Chi), Xếp hạng.
+
+**Hook dùng chung:** `lib/refetch.ts` — `useRefetchOnFocusAndInterval(fetchFn, { intervalMs })`.
 
 ## Phân quyền & Lịch sử thao tác
 
 - **Phân quyền:** `lib/permissions.ts` định nghĩa vai trò (Quản trị viên, Chủ nhiệm, Phó chủ nhiệm, Trưởng/Phó ban, Thành viên ban, Người dùng). Menu sidebar và quyền xem/sửa từng trang phụ thuộc `clubPermission` (lưu trong `userInfo` sau đăng nhập).
 - **Lịch sử thao tác:** Các thao tác (đăng nhập, cập nhật hồ sơ, thêm/sửa/xóa thông báo, thành viên, thu chi, sách, mượn/trả, QR, …) được ghi qua `lib/activityLog.ts` (POST `/api/activity-log/create`). Xem trong **Hồ sơ → tab Lịch sử thao tác**. Trang **Thành viên** (tab Thành viên CLB / Tài khoản đăng nhập) có cột **Lịch sử thao tác** với nút **Xem** — chỉ hiển thị cho Quản trị viên, Chủ nhiệm, Phó chủ nhiệm, Trưởng/Phó ban Nhân sự - Tài Chính.
 
+## Trang công khai
+
+Các trang **doi-tac**, **quyen-gop**, **xep-hang** có thể xem không cần đăng nhập:
+
+- **Quyên góp** (`/quyen-gop`): Chiến dịch gây quỹ, danh sách người ủng hộ, form xác nhận chuyển khoản — dữ liệu từ API.
+- **Nhà tài trợ & Đối tác** (`/doi-tac`): Nội dung từ `DoiTacData`, có thể chỉnh sửa qua dashboard (Ban chủ nhiệm, Ban NS-TC).
+- **Bảng xếp hạng** (`/xep-hang`): Top độc giả, quà tặng tháng.
+
 ## Công nghệ sử dụng
 
-- **Next.js 14** - React framework
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling
-- **React 18** - UI library
-
+- **Next.js 14** — App Router
+- **React 18**
+- **TypeScript**
+- **Tailwind CSS**
+- **Material Symbols** — Icons

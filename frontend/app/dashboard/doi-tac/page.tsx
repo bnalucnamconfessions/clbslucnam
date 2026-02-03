@@ -1,10 +1,23 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
 import RequireAuth from '../../components/RequireAuth'
 import DoiTacContent from '../../components/DoiTacContent'
+import { canEditDoiTac } from '../../../lib/permissions'
 
 export default function DashboardDoiTacPage() {
+  const [canEdit, setCanEdit] = useState(false)
+  useEffect(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('userInfo') : null
+      if (raw) {
+        const p = JSON.parse(raw)
+        setCanEdit(canEditDoiTac(p?.clubPermission || ''))
+      }
+    } catch {}
+  }, [])
+
   return (
     <RequireAuth>
       <div className="relative flex min-h-screen w-full flex-row bg-slate-50 text-slate-900 font-display overflow-hidden h-screen">
@@ -17,11 +30,11 @@ export default function DashboardDoiTacPage() {
                   Nhà tài trợ & Đối tác
                 </h2>
                 <p className="text-slate-500 text-base font-normal leading-normal">
-                  Xem thông tin nhà tài trợ và đối tác trong khu vực quản trị.
+                  {canEdit ? 'Ban chủ nhiệm và Ban Nhân sự - Tài Chính có quyền chỉnh sửa nội dung nhà tài trợ và đối tác.' : 'Xem thông tin nhà tài trợ và đối tác trong khu vực quản trị.'}
                 </p>
               </div>
             </header>
-            <DoiTacContent />
+            <DoiTacContent canEdit={canEdit} />
           </div>
         </main>
       </div>

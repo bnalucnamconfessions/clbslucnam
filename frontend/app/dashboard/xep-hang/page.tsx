@@ -4,11 +4,13 @@ import { useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
 import RequireAuth from '../../components/RequireAuth'
 import XepHangContent from '../../components/XepHangContent'
+import { canEditXepHang } from '../../../lib/permissions'
 
 const TIME_TABS: readonly string[] = ['Tháng này', 'Tháng trước', 'Toàn thời gian']
 
 export default function DashboardXepHangPage() {
   const [isViewOnly, setIsViewOnly] = useState(true)
+  const [canEdit, setCanEdit] = useState(false)
   const [timeTab, setTimeTab] = useState('Tháng này')
 
   useEffect(() => {
@@ -17,8 +19,10 @@ export default function DashboardXepHangPage() {
       const raw = localStorage.getItem('userInfo')
       const info = raw ? JSON.parse(raw) : {}
       setIsViewOnly((info.clubPermission || 'user') === 'user')
+      setCanEdit(canEditXepHang(info.clubPermission || 'user'))
     } catch {
       setIsViewOnly(true)
+      setCanEdit(false)
     }
   }, [])
 
@@ -52,7 +56,7 @@ export default function DashboardXepHangPage() {
                 ))}
               </div>
             </header>
-            <XepHangContent timeTab={timeTab} onTimeTabChange={setTimeTab} />
+            <XepHangContent timeTab={timeTab} onTimeTabChange={setTimeTab} canEdit={canEdit} />
           </div>
         </main>
       </div>

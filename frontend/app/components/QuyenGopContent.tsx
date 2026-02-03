@@ -1,33 +1,177 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { apiUrl } from '../../lib/api'
 
 const PRIMARY = '#137fec'
 
-const donors = [
-  { name: 'Nguyễn Văn A', initials: 'NV', amount: '500.000đ', time: 'Vừa xong', color: 'bg-blue-100 text-[#137fec]' },
-  { name: 'Ẩn danh', initials: 'M', amount: '200.000đ', time: '15 phút trước', color: 'bg-purple-100 text-purple-600' },
-  { name: 'Trần Thị B', initials: 'TH', amount: '100.000đ', time: '2 giờ trước', color: 'bg-orange-100 text-orange-600' },
-]
+type CampaignApi = {
+  id: number | null
+  title: string
+  description: string
+  goal: number
+  bannerUrl: string | null
+  startDate: string | null
+  endDate: string | null
+  raised: number
+  supportCount: number
+  topDonor: string | null
+  daysLeft: number | null
+}
+
+type DonationApi = { id: number; donorName: string; amount: number; message?: string; isAnonymous?: boolean; createdAt: string | null }
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  return name.slice(0, 2).toUpperCase() || '??'
+}
+
+function formatTimeAgo(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  if (diffMins < 1) return 'Vừa xong'
+  if (diffMins < 60) return `${diffMins} phút trước`
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours} giờ trước`
+  return d.toLocaleDateString('vi-VN')
+}
+
+const COLOR_CLASSES = ['bg-blue-100 text-[#137fec]', 'bg-purple-100 text-purple-600', 'bg-orange-100 text-orange-600']
 
 export default function QuyenGopContent() {
-  const [activeTab, setActiveTab] = useState<'bank' | 'wallet' | 'card'>('bank')
+  const [campaign, setCampaign] = useState<CampaignApi | null>(null)
+  const [donors, setDonors] = useState<DonationApi[]>([])
+  const [loading, setLoading] = useState(true)
   const [selectedAmount, setSelectedAmount] = useState<number | null>(100000)
   const [customAmount, setCustomAmount] = useState('')
   const [senderName, setSenderName] = useState('')
   const [message, setMessage] = useState('')
   const [anonymous, setAnonymous] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const amounts = [50000, 100000, 200000, 500000]
-  const raised = 13_000_000
-  const goal = 20_000_000
-  const percent = Math.round((raised / goal) * 100)
-  const daysLeft = 12
-  const supportCount = 84
-  const topDonor = 'Nguyễn Văn A'
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [campRes, donRes] = await Promise.all([
+        fetch(apiUrl('/api/quyen-gop/campaign')),
+        fetch(apiUrl('/api/quyen-gop/donations?page=1&page_size=20')),
+      ])
+      if (campRes.ok) {
+        const j = await campRes.json()
+        setCampaign({
+          id: j.id ?? null,
+          title: j.title ?? 'Chung tay xây dựng thư viện tri thức',
+          description: j.description ?? '',
+          goal: j.goal ?? 20_000_000,
+          bannerUrl: j.bannerUrl ?? null,
+          startDate: j.startDate ?? null,
+          endDate: j.endDate ?? null,
+          raised: j.raised ?? 0,
+          supportCount: j.supportCount ?? 0,
+          topDonor: j.topDonor ?? null,
+          daysLeft: j.daysLeft ?? null,
+        })
+      }
+      if (donRes.ok) {
+        const d = await donRes.json()
+        setDonors(d.results ?? [])
+      }
+    } catch {
+      setCampaign({
+        id: null,
+        title: 'Chung tay xây dựng thư viện tri thức',
+        description: '',
+        goal: 20_000_000,
+        bannerUrl: null,
+        startDate: null,
+        endDate: null,
+        raised: 0,
+        supportCount: 0,
+        topDonor: null,
+        daysLeft: null,
+      })
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
+
+  const raised = campaign?.raised ?? 0
+  const goal = campaign?.goal ?? 20_000_000
+  const percent = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : 0
+  const daysLeft = campaign?.daysLeft ?? 0
+  const supportCount = campaign?.supportCount ?? 0
+  const topDonor = campaign?.topDonor ?? '—'
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText('0908123456')
+  }
+
+  const handleSubmitDonation = async () => {
+    const amt = customAmount ? parseInt(customAmount.replace(/\D/g, ''), 10) : selectedAmount
+    if (!amt || amt <= 0) {
+      setSubmitError('Vui lòng chọn hoặc nhập số tiền ủng hộ.')
+      return
+    }
+    if (!anonymous && !senderName.trim()) {
+      setSubmitError('Vui lòng nhập tên người gửi hoặc chọn ủng hộ ẩn danh.')
+      return
+    }
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      let accountEmail = ''
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('userInfo') : null
+        if (raw) {
+          const p = JSON.parse(raw)
+          accountEmail = (p.accountEmail || p.email || '').trim()
+        }
+      } catch { /* ignore */ }
+      const res = await fetch(apiUrl('/api/quyen-gop/donate'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amt,
+          donorName: senderName.trim(),
+          message: message.trim(),
+          anonymous,
+          campaignId: campaign?.id ?? undefined,
+          accountEmail: accountEmail || undefined,
+        }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.detail || 'Gửi thất bại')
+      }
+      setSelectedAmount(100000)
+      setCustomAmount('')
+      setSenderName('')
+      setMessage('')
+      setAnonymous(false)
+      fetchData()
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : 'Gửi thất bại')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="w-full max-w-[1280px] mx-auto p-4 lg:p-8 flex justify-center py-16">
+        <span className="material-symbols-outlined animate-spin text-4xl" style={{ color: PRIMARY }}>progress_activity</span>
+      </div>
+    )
   }
 
   return (
@@ -40,7 +184,9 @@ export default function QuyenGopContent() {
             <div
               className="w-full aspect-video bg-cover bg-center"
               style={{
-                backgroundImage: `url("https://lh3.googleusercontent.com/aida-public/AB6AXuBqX3zyYmvRLH6gb8NM2ZZZfWAUsb1A8m99gYYco8MQpiD0NVznL7okzb8JTGy3DphFbJBC2NrN47sbC7nowGexYeUmvsTExDcOCuVm61wDMK89ziZYWbej_V_ctd-n5qeEUsKZpfWFx1Mg9u6laT8OcTV2Ri151bpVuqwngo2v9g6-5-zRx0CNHpTZ4-wEFrHzxcoZ5siunLH0-gT8AE7GWZjOwCcfx92wemtOhqwBDM1yR_9mqhfCPsOR5MIkmuVEnydJ-hhjbEyM")`,
+                backgroundImage: campaign?.bannerUrl
+                  ? `url("${campaign.bannerUrl}")`
+                  : 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuBqX3zyYmvRLH6gb8NM2ZZZfWAUsb1A8m99gYYco8MQpiD0NVznL7okzb8JTGy3DphFbJBC2NrN47sbC7nowGexYeUmvsTExDcOCuVm61wDMK89ziZYWbej_V_ctd-n5qeEUsKZpfWFx1Mg9u6laT8OcTV2Ri151bpVuqwngo2v9g6-5-zRx0CNHpTZ4-wEFrHzxcoZ5siunLH0-gT8AE7GWZjOwCcfx92wemtOhqwBDM1yR_9mqhfCPsOR5MIkmuVEnydJ-hhjbEyM")',
               }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
@@ -51,10 +197,10 @@ export default function QuyenGopContent() {
                 </span>
               </div>
               <h1 className="text-3xl lg:text-4xl font-black leading-tight tracking-tight mb-2">
-                Chung tay xây dựng thư viện tri thức
+                {campaign?.title ?? 'Chung tay xây dựng thư viện tri thức'}
               </h1>
               <p className="text-slate-200 text-sm lg:text-base max-w-xl">
-                Mọi đóng góp của bạn sẽ giúp chúng tôi mua thêm sách mới, bảo trì cơ sở vật chất và tổ chức các sự kiện đọc sách ý nghĩa cho cộng đồng.
+                {campaign?.description || 'Mọi đóng góp của bạn sẽ giúp chúng tôi mua thêm sách mới, bảo trì cơ sở vật chất và tổ chức các sự kiện đọc sách ý nghĩa cho cộng đồng.'}
               </p>
             </div>
           </div>
@@ -149,18 +295,18 @@ export default function QuyenGopContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {donors.map((d) => (
-                      <tr key={d.name + d.time} className="hover:bg-slate-50 transition-colors">
+                    {donors.map((d, idx) => (
+                      <tr key={d.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${d.color}`}>
-                              {d.initials}
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${COLOR_CLASSES[idx % COLOR_CLASSES.length]}`}>
+                              {getInitials(d.donorName)}
                             </div>
-                            <span className="font-medium text-slate-900">{d.name}</span>
+                            <span className="font-medium text-slate-900">{d.donorName}</span>
                           </div>
                         </td>
-                        <td className="px-6 py-4 font-bold" style={{ color: PRIMARY }}>{d.amount}</td>
-                        <td className="px-6 py-4 text-slate-500">{d.time}</td>
+                        <td className="px-6 py-4 font-bold" style={{ color: PRIMARY }}>{new Intl.NumberFormat('vi-VN').format(d.amount)}đ</td>
+                        <td className="px-6 py-4 text-slate-500">{formatTimeAgo(d.createdAt)}</td>
                         <td className="px-6 py-4 text-right">
                           <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
                             <span className="material-symbols-outlined text-[14px]">check</span> Thành công
@@ -183,30 +329,6 @@ export default function QuyenGopContent() {
         {/* Cột phải - Form ủng hộ */}
         <div className="lg:col-span-5">
           <div className="sticky top-24 bg-white rounded-2xl border border-slate-100 shadow-xl overflow-hidden flex flex-col">
-            <div className="flex border-b border-slate-100">
-              <button
-                type="button"
-                className={`flex-1 py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'bank' ? 'bg-blue-50/50' : 'hover:bg-slate-50'}`}
-                style={activeTab === 'bank' ? { color: PRIMARY, borderColor: PRIMARY } : { color: '#64748b' }}
-                onClick={() => setActiveTab('bank')}
-              >
-                Chuyển khoản / QR
-              </button>
-              <button
-                type="button"
-                className="flex-1 py-4 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
-                onClick={() => setActiveTab('wallet')}
-              >
-                Ví điện tử
-              </button>
-              <button
-                type="button"
-                className="flex-1 py-4 text-sm font-medium text-slate-500 hover:bg-slate-50 transition-colors"
-                onClick={() => setActiveTab('card')}
-              >
-                Thẻ tín dụng
-              </button>
-            </div>
             <div className="p-6 flex flex-col gap-6">
               <div className="flex flex-col gap-3">
                 <label className="text-sm font-bold text-slate-700">Chọn mức ủng hộ</label>
@@ -308,12 +430,26 @@ export default function QuyenGopContent() {
                   <p className="text-sm font-bold mt-1 text-slate-600">QUY KHUYEN HOC CLB</p>
                 </div>
               </div>
+              {submitError && (
+                <p className="text-sm text-red-600 font-medium">{submitError}</p>
+              )}
               <button
                 type="button"
-                className="w-full h-12 bg-[#137fec] hover:bg-[#0f6fd6] text-white font-bold rounded-xl shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                disabled={submitting}
+                onClick={handleSubmitDonation}
+                className="w-full h-12 bg-[#137fec] hover:bg-[#0f6fd6] disabled:opacity-70 text-white font-bold rounded-xl shadow-lg shadow-blue-500/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
               >
-                <span>Xác nhận đã chuyển khoản</span>
-                <span className="material-symbols-outlined text-lg">check_circle</span>
+                {submitting ? (
+                  <>
+                    <span className="material-symbols-outlined animate-spin text-lg">progress_activity</span>
+                    <span>Đang gửi...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Xác nhận đã chuyển khoản</span>
+                    <span className="material-symbols-outlined text-lg">check_circle</span>
+                  </>
+                )}
               </button>
               <p className="text-xs text-center text-slate-400 font-medium">
                 Mọi đóng góp đều được ghi nhận và công khai minh bạch.

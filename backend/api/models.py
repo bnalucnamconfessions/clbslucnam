@@ -34,6 +34,18 @@ class TopReader(models.Model):
         ordering = ["rank"]
 
 
+class RankingGiftConfig(models.Model):
+    """Cấu hình quà tặng tháng (bảng xếp hạng). Một bản ghi = cấu hình hiện tại."""
+
+    intro = models.TextField(blank=True)
+    items = models.JSONField(default=list)  # [{"title":"...","subtitle":"...","imageUrl":"..."}, ...]
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "ranking_gift_config"
+        ordering = ["-id"]
+
+
 class OverdueBook(models.Model):
     """Sách quá hạn chưa trả."""
 
@@ -177,6 +189,18 @@ class PasswordResetToken(models.Model):
         ordering = ["-created_at"]
 
 
+class EmailVerificationCode(models.Model):
+    """Mã xác thực 6 chữ số gửi qua email khi đăng ký."""
+    email = models.CharField(max_length=255, db_index=True)
+    code = models.CharField(max_length=6)
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "email_verification_codes"
+        ordering = ["-created_at"]
+
+
 class BorrowRecord(models.Model):
     """Phiếu mượn sách."""
 
@@ -221,3 +245,52 @@ class FundTransaction(models.Model):
     class Meta:
         db_table = "fund_transactions"
         ordering = ["-transaction_date", "-id"]
+
+
+class DoiTacData(models.Model):
+    """Nội dung trang Nhà tài trợ & Đối tác (một bản ghi, lưu JSON)."""
+    key = models.CharField(max_length=50, default="data", unique=True)
+    data = models.JSONField(default=dict, blank=True)  # sponsorsGold, partnersStrategic, partnersCommunity
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "doi_tac_data"
+        ordering = ["key"]
+
+
+class DonationCampaign(models.Model):
+    """Chiến dịch quyên góp (mục tiêu, thời hạn, nội dung)."""
+
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    goal = models.DecimalField(max_digits=14, decimal_places=0, default=0)  # VND
+    banner_url = models.URLField(max_length=500, blank=True, null=True)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "donation_campaigns"
+        ordering = ["-created_at"]
+
+
+class Donation(models.Model):
+    """Khoản quyên góp (người ủng hộ, số tiền, ẩn danh)."""
+
+    campaign = models.ForeignKey(
+        DonationCampaign, on_delete=models.CASCADE, related_name="donations", null=True, blank=True
+    )
+    donor_name = models.CharField(max_length=255)  # "Ẩn danh" nếu is_anonymous
+    amount = models.DecimalField(max_digits=14, decimal_places=0)  # VND
+    message = models.TextField(blank=True)
+    is_anonymous = models.BooleanField(default=False)
+    account = models.ForeignKey(
+        Account, on_delete=models.SET_NULL, null=True, blank=True, related_name="donations"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "donations"
+        ordering = ["-created_at"]

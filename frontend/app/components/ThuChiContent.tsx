@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useImperativeHandle, forwardRef, useR
 import { apiUrl } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
+import { canAddFinanceTransaction, canApproveFinance } from '../../lib/permissions'
 
 export type ThuChiContentRef = { exportReport: () => Promise<void> }
 
@@ -22,6 +23,7 @@ type FundTransaction = {
   amount: number
   requesterName: string
   requesterAvatarUrl?: string | null
+  requesterEmail?: string | null
   status: 'pending' | 'confirmed'
 }
 
@@ -57,8 +59,11 @@ function escapeCsvCell(s: string): string {
 
 const EXPORT_PAGE_SIZE = 10000
 
-/** Ban QL Sách và Ban Truyền thông - Đối ngoại: Tài chính chỉ xem, không thêm/sửa/xác nhận. */
-const FINANCE_VIEW_ONLY_PERMISSIONS = ['head_book', 'vice_head_book', 'member_book', 'head_communication', 'vice_head_communication', 'member_communication']
+/** Chuẩn hóa tên để so sánh: bỏ dấu, lowercase, gộp khoảng trắng (tránh "Nguyễn" vs "Nguyen" không khớp). */
+function normalizeNameForCompare(name: string): string {
+  const s = (name || '').trim().toLowerCase().replace(/\s+/g, ' ')
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
 
 const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiContent(_, ref) {
   const [stats, setStats] = useState<FundStats | null>(null)
@@ -74,7 +79,10 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
   const [modalOpen, setModalOpen] = useState(false)
   const [detailId, setDetailId] = useState<number | null>(null)
-  const [financeViewOnly, setFinanceViewOnly] = useState(false)
+  const [canAddTransaction, setCanAddTransaction] = useState<boolean>(false)
+  const [canApprove, setCanApprove] = useState<boolean>(false)
+  const [currentUserFullName, setCurrentUserFullName] = useState('')
+  const [currentUserEmail, setCurrentUserEmail] = useState('')
   const [form, setForm] = useState({
     content: '',
     type: 'expense' as 'income' | 'expense',
@@ -92,18 +100,47 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
   exportMonthParamRef.current = monthParam
   exportSearchRef.current = searchDebounced
 
-  useEffect(() => {
+  const loadUserPermissionAndName = useCallback(() => {
     try {
       const raw = typeof window !== 'undefined' ? localStorage.getItem('userInfo') : null
+      const adminName = typeof window !== 'undefined' ? localStorage.getItem('adminName') : ''
       if (raw) {
         const p = JSON.parse(raw)
         const perm = p?.clubPermission || ''
-        setFinanceViewOnly(FINANCE_VIEW_ONLY_PERMISSIONS.includes(perm))
+        setCanAddTransaction(canAddFinanceTransaction(perm))
+        setCanApprove(canApproveFinance(perm))
+        setCurrentUserFullName((p?.fullName || adminName || '').trim())
+        setCurrentUserEmail((p?.accountEmail || p?.email || '').trim().toLowerCase())
+      } else if (adminName) {
+        setCurrentUserFullName(adminName.trim())
       }
     } catch {
-      setFinanceViewOnly(false)
+      setCanAddTransaction(false)
+      setCanApprove(false)
     }
   }, [])
+
+  useEffect(() => {
+    loadUserPermissionAndName()
+  }, [loadUserPermissionAndName])
+
+  useEffect(() => {
+    const handler = () => loadUserPermissionAndName()
+    window.addEventListener('userInfoUpdated', handler)
+    return () => window.removeEventListener('userInfoUpdated', handler)
+  }, [loadUserPermissionAndName])
+
+  /** Người tạo giao dịch không được duyệt chính giao dịch đó — so sánh theo email tài khoản (hoặc fallback theo tên). */
+  const isCreatorOfTransaction = (row: FundTransaction): boolean => {
+    const reqEmail = (row.requesterEmail ?? '').trim().toLowerCase()
+    const curEmail = (currentUserEmail ?? '').trim().toLowerCase()
+    if (reqEmail && curEmail) return reqEmail === curEmail
+    const a = normalizeNameForCompare(currentUserFullName)
+    const b = normalizeNameForCompare(row.requesterName ?? '')
+    return !!(a && b && a === b)
+  }
+  /** Chỉ hiện nút duyệt khi user không phải tài khoản tạo giao dịch (theo email hoặc tên). */
+  const canShowApproveButton = (row: FundTransaction) => !isCreatorOfTransaction(row)
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search), 300)
@@ -153,7 +190,7 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
   useRefetchOnFocusAndInterval(() => {
     fetchStats()
     fetchList()
-  }, { intervalMs: 60 * 1000 })
+  }, { intervalMs: 20 * 1000 })
 
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -177,6 +214,7 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
           amount,
           requesterName: form.requesterName.trim(),
           transactionDate: form.transactionDate,
+          createdByEmail: (currentUserEmail || '').trim() || undefined,
         }),
       })
       if (!res.ok) {
@@ -206,8 +244,8 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
       if (!res.ok) throw new Error('Cập nhật thất bại')
       const row = list?.results?.find((r) => r.id === id)
       const details = row
-        ? `Nội dung: ${row.content} | ${row.type === 'income' ? 'Thu' : 'Chi'} ${formatVND(row.amount)} | Người yêu cầu: ${row.requesterName} | Trạng thái: ${status === 'confirmed' ? 'Đã xác nhận' : 'Chờ duyệt'}`
-        : `Trạng thái: ${status === 'confirmed' ? 'Đã xác nhận' : 'Chờ duyệt'}`
+        ? `Nội dung: ${row.content} | ${row.type === 'income' ? 'Thu' : 'Chi'} ${formatVND(row.amount)} | Người yêu cầu: ${row.requesterName} | Trạng thái: ${status === 'confirmed' ? 'Đã duyệt' : 'Chờ duyệt'}`
+        : `Trạng thái: ${status === 'confirmed' ? 'Đã duyệt' : 'Chờ duyệt'}`
       logActivity('Cập nhật giao dịch thu chi', details)
       fetchStats()
       fetchList()
@@ -237,7 +275,7 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
         const dateStr = r.transactionDate ? formatDate(r.transactionDate) : ''
         const typeLabel = r.type === 'income' ? 'Thu' : 'Chi'
         const amountStr = r.type === 'income' ? `+${r.amount}` : `-${r.amount}`
-        const statusLabel = r.status === 'confirmed' ? 'Đã xác nhận' : 'Chờ CN duyệt'
+        const statusLabel = r.status === 'confirmed' ? 'Đã duyệt' : 'Chờ duyệt'
         lines.push([
           dateStr,
           r.content || '',
@@ -366,7 +404,7 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
               return opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)
             })()}
           </select>
-          {!financeViewOnly && (
+          {canAddTransaction && (
             <button
               type="button"
               onClick={() => setModalOpen(true)}
@@ -425,7 +463,7 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${row.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-orange-50 text-orange-700 border-orange-100'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${row.status === 'confirmed' ? 'bg-emerald-500' : 'bg-orange-500'}`} />
-                        {row.status === 'confirmed' ? 'Đã xác nhận' : 'Chờ CN duyệt'}
+                        {row.status === 'confirmed' ? 'Đã duyệt' : 'Chờ duyệt'}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-center">
@@ -438,7 +476,7 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
                         >
                           <span className="material-symbols-outlined text-[20px]">visibility</span>
                         </button>
-                        {!financeViewOnly && row.status === 'pending' && (
+                        {Boolean(canApprove) && row.status === 'pending' && canShowApproveButton(row) && (
                           <button
                             type="button"
                             onClick={() => handleConfirmStatus(row.id, 'confirmed')}
@@ -576,7 +614,7 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Trạng thái</p>
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border ${row.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${row.status === 'confirmed' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                      {row.status === 'confirmed' ? 'Đã xác nhận' : 'Chờ duyệt'}
+                      {row.status === 'confirmed' ? 'Đã duyệt' : 'Chờ duyệt'}
                     </span>
                   </div>
                 </div>
@@ -584,7 +622,7 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
 
               {/* Footer actions */}
               <div className="px-6 py-4 bg-slate-50/80 border-t border-slate-100 flex justify-end gap-3">
-                {!financeViewOnly && row.status === 'pending' && (
+                {Boolean(canApprove) && row.status === 'pending' && canShowApproveButton(row) && (
                   <button
                     type="button"
                     onClick={() => { handleConfirmStatus(row.id, 'confirmed'); setDetailId(null); }}

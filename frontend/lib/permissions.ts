@@ -27,8 +27,8 @@ export const PERM_LABELS: Record<string, string> = {
   user: 'Người dùng',
 }
 
-/** Người dùng (user): đường dẫn được phép vào (ngoài dashboard gốc). */
-export const USER_ALLOWED_PATHS = ['/dashboard/xep-hang', '/dashboard/doi-tac', '/dashboard/quyen-gop', '/ho-so', '/thong-bao']
+/** Người dùng (user): đường dẫn được phép vào (xem trang). /dashboard/doi-tac: mọi người xem được, chỉ Ban chủ nhiệm + Ban Nhân sự chỉnh sửa (canEditDoiTac). */
+export const USER_ALLOWED_PATHS = ['/dashboard/xep-hang', '/dashboard/quyen-gop', '/dashboard/doi-tac', '/ho-so', '/thong-bao']
 
 /** Người dùng (user): đường dẫn bị chặn, redirect về dashboard/xep-hang. */
 export const USER_RESTRICTED_PREFIXES = ['/books', '/qr', '/muon', '/tra', '/thanh-vien']
@@ -38,6 +38,55 @@ export const SIDEBAR_SHOW_BOOK_MENU: string[] = [
   'admin', 'chairperson', 'vice_chairperson',
   'head_book', 'vice_head_book', 'member_book',
 ]
+
+/** Tài chính: quyền thêm giao dịch — Ban chủ nhiệm (QTV, Chủ nhiệm, Phó Chủ nhiệm) + Ban Nhân sự - Tài Chính. */
+export const FINANCE_CAN_ADD_TRANSACTION: string[] = [
+  'admin', 'chairperson', 'vice_chairperson',
+  'head_hr_finance', 'vice_head_hr_finance', 'member_hr_finance',
+]
+
+/** Tài chính: quyền duyệt giao dịch — QTV, Chủ nhiệm, Phó Chủ nhiệm, Trưởng/Phó ban Nhân sự - Tài Chính (người tạo không duyệt được chính mình, xử lý ở UI). */
+export const FINANCE_CAN_APPROVE: string[] = [
+  'admin', 'chairperson', 'vice_chairperson',
+  'head_hr_finance', 'vice_head_hr_finance',
+]
+
+export function canAddFinanceTransaction(permission: string): boolean {
+  return FINANCE_CAN_ADD_TRANSACTION.includes(normalizePermission(permission))
+}
+
+export function canApproveFinance(permission: string): boolean {
+  return FINANCE_CAN_APPROVE.includes(normalizePermission(permission))
+}
+
+/** Nhà tài trợ & Đối tác: quyền xem trang quản trị và chỉnh sửa — chỉ Ban chủ nhiệm + Ban Nhân sự - Tài Chính. */
+export const DOI_TAC_CAN_EDIT: string[] = [
+  'admin', 'chairperson', 'vice_chairperson',
+  'head_hr_finance', 'vice_head_hr_finance', 'member_hr_finance',
+]
+
+export function canEditDoiTac(permission: string): boolean {
+  return DOI_TAC_CAN_EDIT.includes(normalizePermission(permission))
+}
+
+/** Ban chủ nhiệm (QTV, Chủ nhiệm, Phó Chủ nhiệm) — dùng chung cho quyên góp, xếp hạng, cập nhật quyền tài khoản. Khớp backend QUYEN_GOP_EDIT_PERMISSIONS. */
+export const BAN_CHU_NHIEM: readonly string[] = [
+  'admin', 'chairperson', 'vice_chairperson',
+]
+
+/** Quyên góp: quyền chỉnh sửa chiến dịch (tạo/sửa) — chỉ Ban chủ nhiệm. */
+export const QUYEN_GOP_CAN_EDIT: readonly string[] = BAN_CHU_NHIEM
+
+export function canEditQuyenGop(permission: string): boolean {
+  return QUYEN_GOP_CAN_EDIT.includes(normalizePermission(permission))
+}
+
+/** Bảng xếp hạng: quyền cập nhật bảng xếp hạng (tính lại từ mượn/trả) — chỉ Ban chủ nhiệm. */
+export const XEP_HANG_CAN_EDIT: readonly string[] = BAN_CHU_NHIEM
+
+export function canEditXepHang(permission: string): boolean {
+  return XEP_HANG_CAN_EDIT.includes(normalizePermission(permission))
+}
 
 /** Thông báo: đối tượng nhận tin (dùng trong form tạo/sửa). */
 export const NOTIFICATION_AUDIENCE_OPTIONS: { value: string; label: string }[] = [

@@ -170,23 +170,14 @@ export default function ThanhVienPage() {
   const canViewActivityLog = CAN_VIEW_ACTIVITY_LOG.includes(currentUserPermission)
 
   const fetchMembers = async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'thanh-vien:fetchMembers:entry',message:'Fetching members',data:{},hypothesisId:'H3',timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     try {
       setLoading(true)
       setError(null)
       const res = await fetch(apiUrl('/api/members'))
       if (!res.ok) throw new Error('Lỗi tải danh sách thành viên')
       const data = await res.json()
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'thanh-vien:fetchMembers:done',message:'Members loaded',data:{count:Array.isArray(data)?data.length:0,accIds:(Array.isArray(data)?data:[]).filter((m:any)=>String(m.userId||'').startsWith('acc-')).map((m:any)=>m.userId)},hypothesisId:'H3,H5',timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       setMembers(data)
     } catch (e) {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'thanh-vien:fetchMembers:error',message:'Fetch error',data:{err:String(e)},hypothesisId:'H3',timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       setError(e instanceof Error ? e.message : 'Không kết nối được backend')
     } finally {
       setLoading(false)
@@ -218,7 +209,7 @@ export default function ThanhVienPage() {
   useRefetchOnFocusAndInterval(() => {
     fetchMembers()
     fetchAccounts()
-  }, { intervalMs: 60 * 1000 })
+  }, { intervalMs: 20 * 1000 })
 
   const openActivityLogModal = async (email: string, label: string) => {
     setLogModalEmail(email)
@@ -306,14 +297,19 @@ export default function ThanhVienPage() {
   }
 
   const handleUpdateAccountPermission = async (accountId: number, clubPermission: string) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'thanh-vien:handleUpdateAccountPermission:entry',message:'Permission change',data:{accountId,clubPermission},hypothesisId:'H2',timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
+    let accountEmail = ''
+    try {
+      const raw = localStorage.getItem('userInfo')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        accountEmail = (parsed.accountEmail || parsed.email || '').trim()
+      }
+    } catch { /* ignore */ }
     try {
       const res = await fetch(apiUrl(`/api/accounts/${accountId}/permission`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clubPermission }),
+        body: JSON.stringify({ clubPermission, accountEmail }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -343,9 +339,6 @@ export default function ThanhVienPage() {
       }
       setEditingAccount(null)
     } catch (e) {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'thanh-vien:handleUpdateAccountPermission:error',message:'Update failed',data:{err:String(e)},hypothesisId:'H3',timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       alert(e instanceof Error ? e.message : 'Lỗi cập nhật quyền')
     } finally {
       setUpdatingPermission(false)
@@ -637,13 +630,6 @@ export default function ThanhVienPage() {
       URL.revokeObjectURL(url)
     }
   }
-
-  // #region agent log
-  const accMembersInFiltered = filteredMembers.filter((m: Member) => String(m.userId || '').startsWith('acc-'))
-  if (accMembersInFiltered.length > 0) {
-    fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'thanh-vien:filter',message:'Filter stats',data:{filterPermission,filterStatus,totalFiltered:filteredMembers.length,accInFiltered:accMembersInFiltered.length,paginatedCount:paginatedMembers.length,currentPage},hypothesisId:'H4',timestamp:Date.now()})}).catch(()=>{});
-  }
-  // #endregion
 
   return (
     <>
@@ -1164,7 +1150,18 @@ export default function ThanhVienPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Mã thành viên (ID) <span className="text-red-500">*</span></label>
-                  <input type="text" value={formMember.userId} onChange={e => setFormMember(p => ({ ...p, userId: e.target.value }))} placeholder="VD: M001" className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#137fec]/20 focus:border-[#137fec]" required />
+                  <input
+                    type="text"
+                    value={formMember.userId?.startsWith('acc-') ? formMember.userId.slice(4) : (formMember.userId ?? '')}
+                    onChange={e => {
+                      const v = e.target.value.trim().replace(/^acc-/, '')
+                      const newUserId = editingMember?.userId?.startsWith('acc-') ? `acc-${v}` : v
+                      setFormMember(p => ({ ...p, userId: newUserId }))
+                    }}
+                    placeholder="VD: M001"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#137fec]/20 focus:border-[#137fec]"
+                    required
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Phân quyền trong CLB</label>

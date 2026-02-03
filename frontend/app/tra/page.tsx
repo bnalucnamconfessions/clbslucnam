@@ -68,7 +68,7 @@ export default function TraPage() {
     fetchBorrows()
   }, [])
 
-  useRefetchOnFocusAndInterval(fetchBorrows, { intervalMs: 60 * 1000 })
+  useRefetchOnFocusAndInterval(fetchBorrows, { intervalMs: 20 * 1000 })
 
   const formatDate = (iso: string) => {
     try {

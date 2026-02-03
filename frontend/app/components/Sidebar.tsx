@@ -8,7 +8,7 @@ import { SIDEBAR_SHOW_BOOK_MENU, PERM_LABELS, normalizePermission } from '../../
 import { logActivity } from '../../lib/activityLog'
 
 const AUTH_KEY = 'adminToken'
-const PERMISSION_POLL_INTERVAL_MS = 45 * 1000 // 45 giây — tự động cập nhật quyền khi admin đổi trên máy/tab khác
+const PERMISSION_POLL_INTERVAL_MS = 20 * 1000 // 20 giây — tự động cập nhật quyền khi admin đổi trên máy/tab khác
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -17,6 +17,7 @@ export default function Sidebar() {
   const [userInfo, setUserInfo] = useState({ fullName: '', avatar: '', role: '', clubPermission: 'user' })
   const showBookMenu = SIDEBAR_SHOW_BOOK_MENU.includes(userInfo.clubPermission || '')
   const showOverviewMenu = userInfo.clubPermission !== 'user'
+  const showDoiTacMenu = true
 
   const loadUserInfo = () => {
       const savedUserInfo = localStorage.getItem('userInfo')
@@ -82,12 +83,16 @@ export default function Sidebar() {
     if (!mounted) return
     const syncFromBackend = async () => {
       try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
         const raw = localStorage.getItem('userInfo')
         if (!raw) return
         const parsed = JSON.parse(raw)
         const email = (parsed.accountEmail || parsed.email || '').trim()
-        if (!email) return
-        const res = await fetch(apiUrl(`/api/auth/me?email=${encodeURIComponent(email)}`), { credentials: 'include' })
+        if (!token && !email) return
+        const url = email ? apiUrl(`/api/auth/me?email=${encodeURIComponent(email)}`) : apiUrl('/api/auth/me')
+        const headers: HeadersInit = { 'Content-Type': 'application/json' }
+        if (token) headers['Authorization'] = `Bearer ${token}`
+        const res = await fetch(url, { credentials: 'include', headers })
         if (!res.ok) return
         const data = await res.json()
         const newPerm = (data.clubPermission || 'user').toLowerCase()
@@ -253,15 +258,17 @@ export default function Sidebar() {
             <span className={`material-symbols-outlined ${isActive('/dashboard/xep-hang') ? 'fill-1' : ''}`}>emoji_events</span>
             <span className="text-sm font-medium leading-normal">Bảng xếp hạng</span>
           </Link>
-          <Link 
-            className={getLinkClasses('/dashboard/doi-tac')} 
-            style={isActive('/dashboard/doi-tac') ? { backgroundColor: '#137fec' } : {}}
-            href="/dashboard/doi-tac"
-            scroll={false}
-          >
-            <span className={`material-symbols-outlined ${isActive('/dashboard/doi-tac') ? 'fill-1' : ''}`}>handshake</span>
-            <span className="text-sm font-medium leading-normal">Nhà tài trợ & Đối tác</span>
-          </Link>
+          {showDoiTacMenu && (
+            <Link 
+              className={getLinkClasses('/dashboard/doi-tac')} 
+              style={isActive('/dashboard/doi-tac') ? { backgroundColor: '#137fec' } : {}}
+              href="/dashboard/doi-tac"
+              scroll={false}
+            >
+              <span className={`material-symbols-outlined ${isActive('/dashboard/doi-tac') ? 'fill-1' : ''}`}>handshake</span>
+              <span className="text-sm font-medium leading-normal">Nhà tài trợ & Đối tác</span>
+            </Link>
+          )}
           <Link 
             className={getLinkClasses('/dashboard/quyen-gop')} 
             style={isActive('/dashboard/quyen-gop') ? { backgroundColor: '#137fec' } : {}}

@@ -217,7 +217,7 @@ export default function ThongBaoPage() {
   }, [])
 
   // Cập nhật khi quay lại tab hoặc mỗi 45 giây
-  useRefetchOnFocusAndInterval(fetchNotifications, { intervalMs: 45 * 1000 })
+  useRefetchOnFocusAndInterval(fetchNotifications, { intervalMs: 20 * 1000 })
 
   useEffect(() => {
     if (showCreateForm && createEditorRef.current) {
@@ -431,8 +431,14 @@ export default function ThongBaoPage() {
     ? userSentList
     : userSentList.filter(n => {
         const aud = (n.audience || '').trim()
+        const audLower = aud.toLowerCase()
+        const filterLower = audienceFilter.toLowerCase()
+        // Kênh "Người dùng": chỉ hiện thông báo gửi đến Người dùng, không hiện "Tất cả thành viên"
+        if (filterLower === 'người dùng') {
+          return audLower.includes('người dùng') && !GENERAL_AUDIENCE_VALUES.some(v => audLower.includes(v))
+        }
         if (isGeneralAudience(aud)) return true
-        return aud.toLowerCase().includes(audienceFilter.toLowerCase())
+        return audLower.includes(filterLower)
       })
   /** Một danh sách duy nhất: tất cả thông báo, chưa đọc xếp trước. */
   const userFilteredByRead = [...userFilteredByChannel].sort((a, b) => {

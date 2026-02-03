@@ -18,10 +18,13 @@ export default function DangNhapPage() {
   const [password, setPassword] = useState('')
   const [registerEmail, setRegisterEmail] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [verificationCode, setVerificationCode] = useState('')
+  const [registerStep, setRegisterStep] = useState<'form' | 'verify'>('form')
   const [showPassword, setShowPassword] = useState(false)
   const [agreeTerms, setAgreeTerms] = useState(false)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [alreadyGoogleMessage, setAlreadyGoogleMessage] = useState('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -104,6 +107,8 @@ export default function DangNhapPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setSuccessMessage('')
+    setAlreadyGoogleMessage('')
     if (password !== confirmPassword) {
       setError('Mật khẩu xác nhận không khớp.')
       return
@@ -131,6 +136,48 @@ export default function DangNhapPage() {
         }),
       })
       const data = await res.json().catch(() => ({}))
+      if (res.ok && data.sent) {
+        setError('')
+        setSuccessMessage(data.message || 'Mã xác thực 6 chữ số đã gửi đến email của bạn.')
+        setRegisterStep('verify')
+        setVerificationCode('')
+        return
+      }
+      if (data.code === 'already_google') {
+        setError('')
+        setAlreadyGoogleMessage(data.detail || 'Email này đã được đăng ký qua Google. Vui lòng đăng nhập bằng Google.')
+        setSuccessMessage('')
+        return
+      }
+      setAlreadyGoogleMessage('')
+      setError(data.detail || 'Gửi mã thất bại.')
+    } catch {
+      setError('Không kết nối được backend.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleVerifyRegister = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    const code = verificationCode.replace(/\D/g, '').slice(0, 6)
+    if (code.length !== 6) {
+      setError('Vui lòng nhập đủ 6 chữ số.')
+      return
+    }
+    setLoading(true)
+    try {
+      const res = await fetch(apiUrl('/api/auth/register/verify'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: registerEmail.trim(),
+          code,
+          password,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
       if (res.ok) {
         logActivity('Đăng ký tài khoản', `Email: ${registerEmail.trim()}`, registerEmail.trim())
         setError('')
@@ -140,9 +187,17 @@ export default function DangNhapPage() {
         setPassword('')
         setConfirmPassword('')
         setRegisterEmail('')
+        setVerificationCode('')
+        setRegisterStep('form')
         return
       }
-      setError(data.detail || 'Đăng ký thất bại.')
+      if (data.code === 'already_google') {
+        setError('')
+        setAlreadyGoogleMessage(data.detail || 'Email này đã được đăng ký qua Google. Vui lòng đăng nhập bằng Google.')
+        return
+      }
+      setAlreadyGoogleMessage('')
+      setError(data.detail || 'Mã không đúng hoặc đã hết hạn.')
     } catch {
       setError('Không kết nối được backend.')
     } finally {
@@ -184,14 +239,14 @@ export default function DangNhapPage() {
                 <div className="mb-8 grid w-full grid-cols-2 border-b border-slate-200">
                   <button
                     type="button"
-                    onClick={() => { setActiveTab('login'); setError(''); setSuccessMessage('') }}
+                    onClick={() => { setActiveTab('login'); setError(''); setSuccessMessage(''); setAlreadyGoogleMessage(''); setRegisterStep('form'); setVerificationCode('') }}
                     className={`border-b-2 py-2 pb-3 pt-2 text-center text-sm font-bold transition-colors ${activeTab === 'login' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-primary'}`}
                   >
                     Đăng nhập
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setActiveTab('register'); setError(''); setSuccessMessage('') }}
+                    onClick={() => { setActiveTab('register'); setError(''); setSuccessMessage(''); setAlreadyGoogleMessage(''); if (activeTab !== 'register') setRegisterStep('form') }}
                     className={`border-b-2 py-2 pb-3 pt-2 text-center text-sm font-bold transition-colors ${activeTab === 'register' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-primary'}`}
                   >
                     Đăng ký
@@ -258,6 +313,57 @@ export default function DangNhapPage() {
                       {loading ? <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />Đang đăng nhập...</> : 'Đăng nhập'}
                     </button>
                   </form>
+                ) : registerStep === 'verify' ? (
+                  <form onSubmit={handleVerifyRegister} className="flex flex-col gap-4">
+                    {alreadyGoogleMessage && (
+                      <div className="flex flex-col gap-1 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                        <p className="flex items-center gap-2 font-medium">
+                          <span className="material-symbols-outlined text-lg">info</span>
+                          {alreadyGoogleMessage}
+                        </p>
+                        <p className="text-blue-700">Dùng nút &quot;Tiếp tục với Google&quot; bên dưới để đăng nhập.</p>
+                      </div>
+                    )}
+                    <p className="text-sm text-slate-600">
+                      Mã 6 chữ số đã gửi đến <strong className="text-slate-900">{registerEmail}</strong>. Nhập mã bên dưới để hoàn tất đăng ký.
+                    </p>
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-sm font-medium text-slate-900">Mã xác thực (6 chữ số)</span>
+                      <div className="relative flex items-center">
+                        <span className="material-symbols-outlined absolute left-4 text-[20px] text-slate-500">pin</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          value={verificationCode}
+                          onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          className="h-12 w-full rounded-lg border border-slate-200 bg-slate-50 pl-11 pr-4 text-lg tracking-[0.4em] font-mono text-slate-900 text-center transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="000000"
+                          autoComplete="one-time-code"
+                        />
+                      </div>
+                    </label>
+                    {error && (
+                      <p className="flex items-center gap-2 text-sm text-red-600">
+                        <span className="material-symbols-outlined text-lg">error</span>
+                        {error}
+                      </p>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={loading || verificationCode.replace(/\D/g, '').length !== 6}
+                      className="mt-4 flex h-12 w-full items-center justify-center rounded-lg bg-[#137fec] text-base font-bold text-white shadow-lg shadow-[#137fec]/20 transition-all hover:bg-[#0f6fd6] active:scale-[0.98] disabled:opacity-70"
+                    >
+                      {loading ? <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />Đang xác thực...</> : 'Xác nhận đăng ký'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setRegisterStep('form'); setError(''); setSuccessMessage(''); setAlreadyGoogleMessage(''); setVerificationCode('') }}
+                      className="text-sm text-slate-500 hover:text-primary"
+                    >
+                      ← Quay lại nhập email
+                    </button>
+                  </form>
                 ) : (
                   <form onSubmit={handleRegister} className="flex flex-col gap-4">
                     <label className="flex flex-col gap-1.5">
@@ -267,7 +373,7 @@ export default function DangNhapPage() {
                         <input
                           type="email"
                           value={registerEmail ?? ''}
-                          onChange={(e) => setRegisterEmail(e.target.value)}
+                          onChange={(e) => { setRegisterEmail(e.target.value); setAlreadyGoogleMessage('') }}
                           className="h-12 w-full rounded-lg border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-900 placeholder-slate-400/50 transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                           placeholder="tài khoản@gmail.com"
                           required
@@ -317,6 +423,15 @@ export default function DangNhapPage() {
                         Tôi đồng ý cho phép sử dụng thông tin cá nhân để mượn sách và nhận quà tặng từ câu lạc bộ.
                       </span>
                     </label>
+                    {alreadyGoogleMessage && (
+                      <div className="flex flex-col gap-1 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                        <p className="flex items-center gap-2 font-medium">
+                          <span className="material-symbols-outlined text-lg">info</span>
+                          {alreadyGoogleMessage}
+                        </p>
+                        <p className="text-blue-700">Dùng nút &quot;Tiếp tục với Google&quot; bên dưới để đăng nhập.</p>
+                      </div>
+                    )}
                     {error && (
                       <p className="flex items-center gap-2 text-sm text-red-600">
                         <span className="material-symbols-outlined text-lg">error</span>
@@ -328,7 +443,7 @@ export default function DangNhapPage() {
                       disabled={loading}
                       className="mt-4 flex h-12 w-full items-center justify-center rounded-lg bg-[#137fec] text-base font-bold text-white shadow-lg shadow-[#137fec]/20 transition-all hover:bg-[#0f6fd6] active:scale-[0.98] disabled:opacity-70"
                     >
-                      {loading ? <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />Đang đăng ký...</> : 'Đăng ký tài khoản'}
+                      {loading ? <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />Đang gửi mã...</> : 'Gửi mã xác thực'}
                     </button>
                   </form>
                 )}
