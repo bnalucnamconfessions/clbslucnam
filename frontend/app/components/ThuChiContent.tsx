@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback, useImperativeHandle, forwardRef, useRef } from 'react'
-import { apiUrl } from '../../lib/api'
+import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 import { canAddFinanceTransaction, canApproveFinance } from '../../lib/permissions'
+import DatePickerButton from './DatePickerButton'
 
 export type ThuChiContentRef = { exportReport: () => Promise<void> }
 
@@ -149,7 +150,8 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch(apiUrl('/api/fund/stats'))
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth('/api/fund/stats'), { headers })
       if (!res.ok) throw new Error('Lỗi tải thống kê')
       const data = await res.json()
       setStats(data)
@@ -168,7 +170,8 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
       params.set('page', String(page))
       params.set('page_size', String(PAGE_SIZE))
       if (searchDebounced) params.set('search', searchDebounced)
-      const res = await fetch(apiUrl(`/api/fund/transactions?${params}`))
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth(`/api/fund/transactions?${params}`), { headers })
       if (!res.ok) throw new Error('Lỗi tải danh sách')
       const data = await res.json()
       setList(data)
@@ -205,9 +208,10 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
     }
     setSubmitting(true)
     try {
+      const { headers, accountEmail } = getApiAuth()
       const res = await fetch(apiUrl('/api/fund/transactions/create'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           content: form.content.trim(),
           type: form.type,
@@ -215,6 +219,7 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
           requesterName: form.requesterName.trim(),
           transactionDate: form.transactionDate,
           createdByEmail: (currentUserEmail || '').trim() || undefined,
+          accountEmail: accountEmail || undefined,
         }),
       })
       if (!res.ok) {
@@ -236,10 +241,11 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
   const handleConfirmStatus = async (id: number, status: 'pending' | 'confirmed') => {
     setConfirmingId(id)
     try {
+      const { headers, accountEmail } = getApiAuth()
       const res = await fetch(apiUrl(`/api/fund/transactions/${id}/update`), {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, accountEmail: accountEmail || undefined }),
       })
       if (!res.ok) throw new Error('Cập nhật thất bại')
       const row = list?.results?.find((r) => r.id === id)
@@ -265,7 +271,8 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
       params.set('page', '1')
       params.set('page_size', String(EXPORT_PAGE_SIZE))
       if (exportSearchRef.current) params.set('search', exportSearchRef.current)
-      const res = await fetch(apiUrl(`/api/fund/transactions?${params}`))
+      const { headers: authHeaders } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth(`/api/fund/transactions?${params}`), { headers: authHeaders })
       if (!res.ok) throw new Error('Không tải được dữ liệu để xuất')
       const data = await res.json()
       const rows = (data.results || []) as FundTransaction[]
@@ -693,11 +700,11 @@ const ThuChiContent = forwardRef<ThuChiContentRef, object>(function ThuChiConten
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Ngày giao dịch</label>
-                <input
-                  type="date"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                <DatePickerButton
                   value={form.transactionDate}
-                  onChange={(e) => setForm((f) => ({ ...f, transactionDate: e.target.value }))}
+                  onChange={(v) => setForm((f) => ({ ...f, transactionDate: v }))}
+                  placeholder="Chọn ngày"
+                  className="h-auto py-2 text-sm"
                 />
               </div>
               <div className="flex gap-2 justify-end pt-2">

@@ -67,12 +67,12 @@ export default function DashboardPage() {
       setError(null)
       const { headers } = getApiAuth()
       const [statsRes, readersRes, overdueRes, fundRes, campaignRes, notifRes] = await Promise.all([
-        fetch(apiUrl('/api/dashboard/stats')),
+        fetch(apiUrlWithAuth('/api/dashboard/stats'), { headers }),
         fetch(apiUrl('/api/dashboard/top-readers')),
         fetch(apiUrlWithAuth('/api/dashboard/overdue'), { headers }),
-        fetch(apiUrl('/api/fund/stats')),
+        fetch(apiUrlWithAuth('/api/fund/stats'), { headers }),
         fetch(apiUrl('/api/quyen-gop/campaign')),
-        fetch(apiUrl('/api/notifications')),
+        fetch(apiUrlWithAuth('/api/notifications'), { headers }),
       ])
       if (!statsRes.ok || !readersRes.ok || !overdueRes.ok) throw new Error('Lỗi tải dữ liệu')
       const [statsData, readersData, overdueData] = await Promise.all([
@@ -134,7 +134,7 @@ export default function DashboardPage() {
         {/* Main Content */}
         <div className="flex-1 overflow-y-auto scroll-smooth bg-white no-scrollbar">
           {/* Header */}
-          <header className="px-4 md:px-6 lg:px-8 pt-4 md:pt-6 pb-6 border-b border-slate-200 flex flex-col md:flex-row flex-wrap justify-between items-start md:items-center gap-4 bg-white">
+          <header className="px-4 md:px-6 lg:px-8 pt-6 pb-6 border-b border-slate-200 flex flex-col md:flex-row flex-wrap justify-between items-start md:items-center gap-4 bg-white">
             <div className="flex flex-col gap-2">
               <h2 className="text-slate-900 text-3xl md:text-4xl font-black leading-tight tracking-[-0.033em]">
                 Tổng quan

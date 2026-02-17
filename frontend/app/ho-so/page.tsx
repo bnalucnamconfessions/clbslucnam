@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import Sidebar from '../components/Sidebar'
 import RequireAuth from '../components/RequireAuth'
-import { apiUrl, getApiAuth } from '../../lib/api'
+import DatePickerButton from '../components/DatePickerButton'
+import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 
 interface PersonalInfo {
@@ -171,11 +172,6 @@ export default function HoSoPage() {
       try {
         const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
         const s = localStorage.getItem('userInfo')
-        // #region agent log
-        const _p = s ? (() => { try { return JSON.parse(s) } catch { return {} } })() : {}
-        const _em = (_p.accountEmail || _p.email || '').trim()
-        fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ho-so:syncRoleFromBackend',message:'Before auth/me',data:{hasS:!!s,hasToken:!!token,hasEmail:!!_em},hypothesisId:'H2,H3',timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         if (!s) return
         const parsed = JSON.parse(s)
         const email = (parsed.accountEmail || parsed.email || '').trim()
@@ -310,7 +306,8 @@ export default function HoSoPage() {
       return
     }
     setLoadingLogs(true)
-    fetch(apiUrl(`/api/activity-log?email=${encodeURIComponent(email)}&accountEmail=${encodeURIComponent(email)}`))
+    const { headers } = getApiAuth()
+    fetch(apiUrlWithAuth(`/api/activity-log?email=${encodeURIComponent(email)}&accountEmail=${encodeURIComponent(email)}`), { headers })
       .then(async (res) => {
         if (!res.ok) return []
         const data = await res.json()
@@ -376,12 +373,6 @@ export default function HoSoPage() {
                       </span>
                     </div>
                     {personalInfo.studentId && <p className="text-[#4c739a] text-base mt-1">ID: {personalInfo.studentId}</p>}
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded">
-                        <span className="material-symbols-outlined text-[14px]">stars</span>
-                        {clubInfo.points.toLocaleString('vi-VN')} Điểm tích lũy
-                      </span>
-                    </div>
                   </div>
                 </div>
                 <div className="flex w-full md:w-auto gap-3">
@@ -546,11 +537,11 @@ export default function HoSoPage() {
                         Ngày sinh
                       </label>
                       {isEditing ? (
-                        <input
-                          type="date"
+                        <DatePickerButton
                           value={personalInfo.dateOfBirth}
-                          onChange={(e) => handleInputChange('dateOfBirth', e.target.value)}
-                          className="px-4 py-2.5 rounded-lg border border-[#cfdbe7] bg-white text-[#0d141b] focus:ring-2 focus:ring-primary focus:border-transparent"
+                          onChange={(v) => handleInputChange('dateOfBirth', v)}
+                          placeholder="Chọn ngày sinh"
+                          className="h-auto py-2.5"
                         />
                       ) : (
                         <p className="px-4 py-2.5 rounded-lg bg-slate-50 text-[#4c739a]">

@@ -1,7 +1,7 @@
 /**
  * Ghi log thao tác (Dashboard) — gửi lên backend để hiển thị trong Lịch sử thao tác (Hồ sơ).
  */
-import { apiUrl } from './api'
+import { apiUrl, getApiAuth } from './api'
 
 function getEmail(): string {
   if (typeof window === 'undefined') return ''
@@ -20,9 +20,10 @@ function getEmail(): string {
 export function logActivity(action: string, details?: string, email?: string): void {
   const logEmail = (email || '').trim() || getEmail()
   if (!logEmail) return
+  const { headers } = getApiAuth()
   fetch(apiUrl('/api/activity-log/create'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: logEmail, action, details: (details || '').trim() }),
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: logEmail, action, details: (details || '').trim(), accountEmail: logEmail }),
   }).catch(() => {})
 }

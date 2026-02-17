@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import Sidebar from '../components/Sidebar'
 import RequireAuth from '../components/RequireAuth'
-import { apiUrl } from '../../lib/api'
+import DatePickerButton from '../components/DatePickerButton'
+import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 import { getVisibleChannelIds, canPostNotifications, getSenderLabel, getAllowedAudienceOptions } from '../../lib/permissions'
@@ -197,7 +198,8 @@ export default function ThongBaoPage() {
     try {
       setLoading(true)
       setError(null)
-      const res = await fetch(apiUrl('/api/notifications'))
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth('/api/notifications'), { headers })
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}))
         throw new Error(typeof errBody?.detail === 'string' ? errBody.detail : 'Lỗi tải danh sách thông báo')
@@ -275,9 +277,10 @@ export default function ThongBaoPage() {
       } else if (formNotif.scheduledDate) {
         scheduledDate = `${formNotif.scheduledDate}T00:00:00`
       }
+      const { headers, accountEmail } = getApiAuth()
       const res = await fetch(apiUrl('/api/notifications/create'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: formNotif.title,
           summary: summaryHtml,
@@ -287,6 +290,7 @@ export default function ThongBaoPage() {
           status,
           scheduledDate,
           senderLabel: getSenderLabel(currentUserPermission),
+          accountEmail: accountEmail || undefined,
         }),
       })
       if (!res.ok) {
@@ -319,7 +323,8 @@ export default function ThongBaoPage() {
     if (!confirm(`Bạn có chắc muốn xóa thông báo "${notif.title}"?`)) return
     setError(null)
     try {
-      const res = await fetch(apiUrl(`/api/notifications/${notif.id}/delete`), { method: 'DELETE' })
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth(`/api/notifications/${notif.id}/delete`), { method: 'DELETE', headers })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || 'Lỗi xóa thông báo')
@@ -361,9 +366,10 @@ export default function ThongBaoPage() {
         scheduledDate = `${formNotif.scheduledDate}T00:00:00`
       }
       const summaryHtml = editEditorRef.current?.innerHTML ?? formNotif.summary
+      const { headers, accountEmail } = getApiAuth()
       const res = await fetch(apiUrl(`/api/notifications/${editingNotif.id}`), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: formNotif.title,
           summary: summaryHtml,
@@ -372,6 +378,7 @@ export default function ThongBaoPage() {
           urgency: formNotif.urgency || 'normal',
           scheduledDate,
           senderLabel: getSenderLabel(currentUserPermission),
+          accountEmail: accountEmail || undefined,
         }),
       })
       if (!res.ok) {
@@ -470,9 +477,10 @@ export default function ThongBaoPage() {
         const parsed = JSON.parse(raw)
         const email = (parsed.accountEmail || parsed.email || '').trim()
         if (email) {
+          const { headers } = getApiAuth()
           fetch(apiUrl(`/api/notifications/${numId}/read`), {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { ...headers, 'Content-Type': 'application/json' },
             body: JSON.stringify({ email }),
           }).catch(() => {})
         }
@@ -493,22 +501,22 @@ export default function ThongBaoPage() {
     <RequireAuth>
     <div className="relative flex min-h-screen w-full flex-row bg-slate-50 text-slate-900 font-display overflow-hidden h-screen">
       <Sidebar />
-      <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#fcfcfd] relative">
-        <div className="flex-1 overflow-y-auto no-scrollbar">
-          <div className="flex-1 flex flex-col p-4 md:p-6 lg:px-8 lg:py-8 w-full">
-            {/* Header trang: luôn hiện (người dùng và thành viên cùng layout) */}
-            <header className="px-0 pt-0 pb-6 border-b border-slate-200 mb-6 flex flex-col md:flex-row flex-wrap justify-between items-start md:items-center gap-4 bg-transparent">
-              <div className="flex flex-col gap-2">
-                <h1 className="text-slate-900 text-3xl md:text-4xl font-black leading-tight tracking-[-0.033em]">
-                  Thông báo
-                </h1>
-                <p className="text-slate-500 text-base font-normal leading-normal">
-                  {isSingleChannelView
-                    ? 'Xem thông báo dành cho bạn. Lọc theo mức độ hoặc tìm kiếm.'
-                    : 'Xem thông báo từ các kênh bạn được xem. Chọn kênh bên trái, lọc theo mức độ hoặc tìm kiếm trong ban.'}
-                </p>
-              </div>
-            </header>
+      <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 relative">
+        <div className="flex-1 overflow-y-auto scroll-smooth bg-white no-scrollbar">
+          {/* Header trang: đồng bộ với Tổng quan / Bảng xếp hạng (px-4 md:px-6 lg:px-8 pt-6 pb-6) */}
+          <header className="px-4 md:px-6 lg:px-8 pt-6 pb-6 border-b border-slate-200 flex flex-col md:flex-row flex-wrap justify-between items-start md:items-center gap-4 bg-white">
+            <div className="flex flex-col gap-2">
+              <h2 className="text-slate-900 text-3xl md:text-4xl font-black leading-tight tracking-[-0.033em]">
+                Thông báo
+              </h2>
+              <p className="text-slate-500 text-base font-normal leading-normal">
+                {isSingleChannelView
+                  ? 'Xem thông báo dành cho bạn. Lọc theo mức độ hoặc tìm kiếm.'
+                  : 'Xem thông báo từ các kênh bạn được xem. Chọn kênh bên trái, lọc theo mức độ hoặc tìm kiếm trong ban.'}
+              </p>
+            </div>
+          </header>
+          <div className="p-4 md:p-6 lg:px-8 lg:py-8 w-full">
             {/* Tabs: ẩn khi chỉ 1 kênh và không có quyền đăng (chỉ một tab) */}
             {(!isSingleChannelView || userCanPost) && (
             <div className="flex items-center gap-2 mb-6 border-b border-slate-200 pb-2">
@@ -1117,9 +1125,13 @@ export default function ThongBaoPage() {
                     <div className="col-span-full">
                       <label className="block text-sm font-bold text-slate-900 mb-3">Thời gian đăng tin</label>
                       <div className="flex flex-col sm:flex-row gap-4">
-                        <div className="relative flex-1">
-                          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[20px]">calendar_today</span>
-                          <input type="date" value={formNotif.scheduledDate} onChange={e => setFormNotif(p => ({ ...p, scheduledDate: e.target.value }))} className="w-full pl-11 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all" />
+                        <div className="flex-1">
+                          <DatePickerButton
+                            value={formNotif.scheduledDate}
+                            onChange={(v) => setFormNotif((p) => ({ ...p, scheduledDate: v }))}
+                            placeholder="Chọn ngày"
+                            className="h-auto py-3 rounded-xl border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10"
+                          />
                         </div>
                         <div className="relative flex-1">
                           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[20px]">schedule</span>
@@ -1283,13 +1295,12 @@ export default function ThongBaoPage() {
                   <div className="col-span-full">
                     <label className="block text-sm font-bold text-slate-900 mb-3">Thời gian đăng tin</label>
                     <div className="flex flex-col sm:flex-row gap-4">
-                      <div className="relative flex-1">
-                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[20px]">calendar_today</span>
-                        <input
-                          type="date"
+                      <div className="flex-1">
+                        <DatePickerButton
                           value={formNotif.scheduledDate}
-                          onChange={e => setFormNotif(p => ({ ...p, scheduledDate: e.target.value }))}
-                          className="w-full pl-11 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                          onChange={(v) => setFormNotif((p) => ({ ...p, scheduledDate: v }))}
+                          placeholder="Chọn ngày"
+                          className="h-auto py-3 rounded-xl border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10"
                         />
                       </div>
                       <div className="relative flex-1">

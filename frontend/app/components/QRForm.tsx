@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { apiUrl, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
+import DatePickerButton from './DatePickerButton'
 
 const GENRE_MAP: Record<string, string> = {
   giaokhoa: 'Giáo khoa',
@@ -138,14 +139,16 @@ export default function QRForm({ onCreated }: { onCreated?: () => void }) {
               name="loaiSach"
               value={formData.loaiSach}
               onChange={handleInputChange}
-              className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm appearance-none"
+              className={`w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm appearance-none cursor-pointer hover:bg-white transition-colors ${
+                formData.loaiSach ? 'text-slate-900' : 'text-slate-400'
+              }`}
               required
             >
-              <option value="">Chọn loại</option>
-              <option value="giaokhoa">Giáo khoa</option>
-              <option value="tieuthuyet">Tiểu thuyết</option>
-              <option value="kynang">Kỹ năng</option>
-              <option value="tapchi">Tạp chí</option>
+              <option value="" disabled className="text-slate-400">Chọn loại</option>
+              <option value="giaokhoa" className="text-slate-900 bg-white py-2">Giáo khoa</option>
+              <option value="tieuthuyet" className="text-slate-900 bg-white py-2">Tiểu thuyết</option>
+              <option value="kynang" className="text-slate-900 bg-white py-2">Kỹ năng</option>
+              <option value="tapchi" className="text-slate-900 bg-white py-2">Tạp chí</option>
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
@@ -154,7 +157,7 @@ export default function QRForm({ onCreated }: { onCreated?: () => void }) {
               name="giaTien"
               value={formData.giaTien}
               onChange={handleInputChange}
-              className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm text-right" 
+              className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
               placeholder="0" 
               type="number"
               min="0"
@@ -162,12 +165,10 @@ export default function QRForm({ onCreated }: { onCreated?: () => void }) {
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-slate-700">Ngày mua</label>
-            <input 
-              name="ngayMua"
+            <DatePickerButton
               value={formData.ngayMua}
-              onChange={handleInputChange}
-              className="w-full rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm" 
-              type="date"
+              onChange={(v) => setFormData((prev) => ({ ...prev, ngayMua: v }))}
+              placeholder="Chọn ngày"
             />
           </div>
         </div>

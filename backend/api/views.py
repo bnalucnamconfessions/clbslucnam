@@ -597,7 +597,10 @@ def google_auth_callback(request):
 
 @api_view(["GET"])
 def account_list(request):
-    """Danh sách tài khoản đã đăng nhập/đăng ký."""
+    """Danh sách tài khoản đã đăng nhập/đăng ký. Chỉ thành viên có vai trò."""
+    _, err = _require_thanh_vien(request)
+    if err is not None:
+        return err
     rows = list(Account.objects.all())
     member_user_ids = set(
         Member.objects.filter(user_id__startswith="acc-").values_list("user_id", flat=True)
@@ -790,7 +793,10 @@ def _sync_account_member(acc, perm):
 @csrf_exempt
 @api_view(["DELETE"])
 def account_delete(request, account_id):
-    """Xóa tài khoản. Không xóa được nếu thành viên liên kết đang có sách mượn chưa trả."""
+    """Xóa tài khoản. Chỉ BCN. Không xóa được nếu thành viên liên kết đang có sách mượn chưa trả."""
+    _, err = _require_ban_chu_nhiem(request)
+    if err is not None:
+        return err
     try:
         acc = Account.objects.get(pk=account_id)
     except Account.DoesNotExist:
@@ -807,7 +813,10 @@ def account_delete(request, account_id):
 
 @api_view(["GET"])
 def dashboard_stats(request):
-    """Lấy thống kê tổng quan."""
+    """Lấy thống kê tổng quan. Chỉ thành viên có vai trò."""
+    _, err = _require_thanh_vien(request)
+    if err is not None:
+        return err
     row = DashboardStats.objects.first()
     if not row:
         return Response({
@@ -1259,17 +1268,24 @@ def _audience_to_permissions(audience):
 
 @api_view(["GET"])
 def notification_list(request):
+    """Danh sách thông báo. Chỉ trả thông báo đúng đối tượng theo club_permission của người gọi."""
+    caller, err = _get_account_from_request(request)
+    if err is not None:
+        return err
     try:
         rows = Notification.objects.prefetch_related("read_receipts__account").all()
         out = []
+        caller_perm = (caller.club_permission or "user").strip().lower()
         for r in rows:
+            perms = _audience_to_permissions(r.audience)
+            if perms and caller_perm not in perms:
+                continue
             read_receipts = list(r.read_receipts.all())
             read_by = [
                 {"name": rr.account.full_name or rr.account.email or "—", "email": rr.account.email or rr.account.display_email or ""}
                 for rr in read_receipts
             ]
             read_account_ids = {rr.account_id for rr in read_receipts}
-            perms = _audience_to_permissions(r.audience)
             intended = (
                 Account.objects.filter(club_permission__in=perms)
                 if perms
@@ -1320,7 +1336,10 @@ def notification_mark_read(request, notif_id):
 
 @api_view(["GET"])
 def activity_log_list(request):
-    """Danh sách log thao tác của tài khoản (30 ngày gần nhất)."""
+    """Danh sách log thao tác của tài khoản (30 ngày). Chỉ trả nếu người gọi là chủ tài khoản hoặc BCN/Trưởng, Phó ban NS-TC."""
+    caller, err = _get_account_from_request(request)
+    if err is not None:
+        return err
     email = (request.GET.get("email") or request.GET.get("accountEmail") or "").strip()
     if not email:
         return Response({"detail": "Thiếu email"}, status=status.HTTP_400_BAD_REQUEST)
@@ -1329,6 +1348,12 @@ def activity_log_list(request):
         acc = Account.objects.filter(display_email__iexact=email).first()
     if not acc:
         return Response({"detail": "Không tìm thấy tài khoản"}, status=status.HTTP_404_NOT_FOUND)
+    perm = (caller.club_permission or "user").strip().lower()
+    if caller.id != acc.id and perm not in ACTIVITY_LOG_VIEW_PERMISSIONS:
+        return Response(
+            {"detail": "Chỉ chủ tài khoản hoặc BCN/Trưởng, Phó ban NS-TC được xem lịch sử thao tác của người khác."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     from datetime import timedelta
     since = timezone.now() - timedelta(days=30)
     rows = ActivityLog.objects.filter(account=acc, created_at__gte=since).order_by("-created_at")[:500]
@@ -1342,7 +1367,10 @@ def activity_log_list(request):
 @csrf_exempt
 @api_view(["POST"])
 def activity_log_create(request):
-    """Ghi log thao tác (body: email hoặc accountEmail, action, details)."""
+    """Ghi log thao tác. Chỉ cho phép ghi log cho chính email của người gọi."""
+    caller, err = _get_account_from_request(request)
+    if err is not None:
+        return err
     email = (request.data.get("email") or request.data.get("accountEmail") or "").strip()
     action = (request.data.get("action") or "").strip()
     if not email:
@@ -1354,6 +1382,11 @@ def activity_log_create(request):
         acc = Account.objects.filter(display_email__iexact=email).first()
     if not acc:
         return Response({"detail": "Không tìm thấy tài khoản"}, status=status.HTTP_404_NOT_FOUND)
+    if acc.id != caller.id:
+        return Response(
+            {"detail": "Chỉ được ghi log thao tác cho chính tài khoản của bạn."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     details = (request.data.get("details") or "").strip()
     ActivityLog.objects.create(account=acc, action=action, details=details)
     return Response({"ok": True}, status=status.HTTP_201_CREATED)
@@ -1362,6 +1395,16 @@ def activity_log_create(request):
 @csrf_exempt
 @api_view(["POST"])
 def notification_create(request):
+    """Tạo thông báo. Chỉ BCN + Trưởng ban + Phó ban."""
+    caller, err = _get_account_from_request(request)
+    if err is not None:
+        return err
+    perm = (caller.club_permission or "user").strip().lower()
+    if perm not in NOTIFICATION_POST_PERMISSIONS:
+        return Response(
+            {"detail": "Chỉ Ban Chủ nhiệm và Trưởng/Phó ban được đăng thông báo."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     data = request.data
     from django.utils import timezone
     sd = None
@@ -1388,7 +1431,16 @@ def notification_create(request):
 @csrf_exempt
 @api_view(["PUT", "PATCH"])
 def notification_update(request, notif_id):
-    """Cập nhật thông báo."""
+    """Cập nhật thông báo. Chỉ BCN + Trưởng ban + Phó ban."""
+    caller, err = _get_account_from_request(request)
+    if err is not None:
+        return err
+    perm = (caller.club_permission or "user").strip().lower()
+    if perm not in NOTIFICATION_POST_PERMISSIONS:
+        return Response(
+            {"detail": "Chỉ Ban Chủ nhiệm và Trưởng/Phó ban được sửa thông báo."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     try:
         notif = Notification.objects.get(pk=notif_id)
     except Notification.DoesNotExist:
@@ -1426,7 +1478,16 @@ def notification_update(request, notif_id):
 @csrf_exempt
 @api_view(["DELETE"])
 def notification_delete(request, notif_id):
-    """Xóa thông báo."""
+    """Xóa thông báo. Chỉ BCN + Trưởng ban + Phó ban."""
+    caller, err = _get_account_from_request(request)
+    if err is not None:
+        return err
+    perm = (caller.club_permission or "user").strip().lower()
+    if perm not in NOTIFICATION_POST_PERMISSIONS:
+        return Response(
+            {"detail": "Chỉ Ban Chủ nhiệm và Trưởng/Phó ban được xóa thông báo."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     try:
         notif = Notification.objects.get(pk=notif_id)
     except Notification.DoesNotExist:
@@ -1527,7 +1588,10 @@ def _fund_balance():
 
 @api_view(["GET"])
 def fund_stats(request):
-    """Thống kê thu chi: tổng quỹ, tổng thu tháng, tổng chi tháng, số đơn chờ duyệt."""
+    """Thống kê thu chi. Chỉ thành viên có vai trò."""
+    _, err = _require_thanh_vien(request)
+    if err is not None:
+        return err
     from datetime import date
     today = date.today()
     month_start = today.replace(day=1)
@@ -1561,7 +1625,10 @@ def fund_stats(request):
 
 @api_view(["GET"])
 def fund_transaction_list(request):
-    """Danh sách giao dịch thu chi, có lọc tháng, tìm kiếm, phân trang."""
+    """Danh sách giao dịch thu chi. Chỉ thành viên có vai trò."""
+    _, err = _require_thanh_vien(request)
+    if err is not None:
+        return err
     from datetime import date
     today = date.today()
 
@@ -1632,7 +1699,16 @@ def fund_transaction_list(request):
 @csrf_exempt
 @api_view(["POST"])
 def fund_transaction_create(request):
-    """Tạo giao dịch thu/chi mới."""
+    """Tạo giao dịch thu/chi mới. Chỉ BCN + Ban NS-TC."""
+    caller, err = _get_account_from_request(request)
+    if err is not None:
+        return err
+    perm = (caller.club_permission or "user").strip().lower()
+    if perm not in FINANCE_CAN_ADD_PERMISSIONS:
+        return Response(
+            {"detail": "Chỉ Ban Chủ nhiệm và Ban Nhân sự - Tài Chính được thêm giao dịch."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     from datetime import date
 
     data = request.data
@@ -1693,7 +1769,10 @@ def fund_transaction_create(request):
 
 @api_view(["GET"])
 def fund_transaction_detail(request, transaction_id):
-    """Chi tiết một giao dịch."""
+    """Chi tiết một giao dịch. Chỉ thành viên có vai trò."""
+    _, err = _require_thanh_vien(request)
+    if err is not None:
+        return err
     try:
         r = FundTransaction.objects.select_related("requester_account").get(pk=transaction_id)
     except FundTransaction.DoesNotExist:
@@ -1716,17 +1795,26 @@ def fund_transaction_detail(request, transaction_id):
 @csrf_exempt
 @api_view(["PUT", "PATCH"])
 def fund_transaction_update(request, transaction_id):
-    """Cập nhật giao dịch (nội dung, trạng thái, ...)."""
+    """Cập nhật giao dịch. Đổi trạng thái duyệt chỉ BCN + Trưởng/Phó ban NS-TC."""
     from datetime import date
-
+    caller, err = _get_account_from_request(request)
+    if err is not None:
+        return err
     try:
         obj = FundTransaction.objects.get(pk=transaction_id)
     except FundTransaction.DoesNotExist:
         return Response({"detail": "Giao dịch không tồn tại."}, status=status.HTTP_404_NOT_FOUND)
 
     data = request.data
-    if "status" in data and data["status"] in (FundTransaction.STATUS_PENDING, FundTransaction.STATUS_CONFIRMED):
-        obj.status = data["status"]
+    new_status = data.get("status") if "status" in data else None
+    if new_status in (FundTransaction.STATUS_PENDING, FundTransaction.STATUS_CONFIRMED):
+        perm = (caller.club_permission or "user").strip().lower()
+        if perm not in FINANCE_CAN_APPROVE_PERMISSIONS:
+            return Response(
+                {"detail": "Chỉ Ban Chủ nhiệm và Trưởng/Phó ban NS-TC được duyệt giao dịch."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        obj.status = new_status
     if "content" in data and isinstance(data["content"], str):
         obj.content = data["content"].strip() or obj.content
     if "requesterName" in data and isinstance(data["requesterName"], str):
@@ -1823,6 +1911,28 @@ THANH_VIEN_PERMISSIONS = (
     "head_book", "vice_head_book", "member_book",
     "head_communication", "vice_head_communication", "member_communication",
     "head_hr_finance", "vice_head_hr_finance", "member_hr_finance",
+)
+# Xem lịch sử thao tác của người khác: BCN + Trưởng/Phó ban NS-TC (khớp frontend CAN_VIEW_ACTIVITY_LOG).
+ACTIVITY_LOG_VIEW_PERMISSIONS = (
+    "admin", "chairperson", "vice_chairperson",
+    "head_hr_finance", "vice_head_hr_finance",
+)
+# Đăng/sửa/xóa thông báo: BCN + Trưởng ban + Phó ban (khớp frontend canPostNotifications).
+NOTIFICATION_POST_PERMISSIONS = (
+    "admin", "chairperson", "vice_chairperson",
+    "head_book", "vice_head_book",
+    "head_communication", "vice_head_communication",
+    "head_hr_finance", "vice_head_hr_finance",
+)
+# Tài chính: quyền thêm giao dịch (khớp frontend FINANCE_CAN_ADD_TRANSACTION).
+FINANCE_CAN_ADD_PERMISSIONS = (
+    "admin", "chairperson", "vice_chairperson",
+    "head_hr_finance", "vice_head_hr_finance", "member_hr_finance",
+)
+# Tài chính: quyền duyệt giao dịch (khớp frontend FINANCE_CAN_APPROVE).
+FINANCE_CAN_APPROVE_PERMISSIONS = (
+    "admin", "chairperson", "vice_chairperson",
+    "head_hr_finance", "vice_head_hr_finance",
 )
 
 

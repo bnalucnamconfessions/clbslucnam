@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { apiUrl } from '../../lib/api'
+import DatePickerButton from './DatePickerButton'
 
 const PRIMARY = '#137fec'
 
@@ -286,20 +287,20 @@ export default function QuyenGopDashboardContent({ canEdit = false }: QuyenGopDa
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Ngày bắt đầu</label>
-                  <input
-                    type="date"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-200 outline-none"
+                  <DatePickerButton
                     value={form.startDate}
-                    onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
+                    onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
+                    placeholder="Chọn ngày"
+                    className="h-auto py-2 focus:ring-blue-200"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Ngày kết thúc</label>
-                  <input
-                    type="date"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-200 outline-none"
+                  <DatePickerButton
                     value={form.endDate}
-                    onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
+                    onChange={(v) => setForm((f) => ({ ...f, endDate: v }))}
+                    placeholder="Chọn ngày"
+                    className="h-auto py-2 focus:ring-blue-200"
                   />
                 </div>
               </div>

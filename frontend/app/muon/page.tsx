@@ -147,23 +147,21 @@ export default function MuonPage() {
 
   return (
     <RequireAuth>
-    <div className="relative flex min-h-screen w-full flex-row bg-white text-slate-900 font-display overflow-hidden">
-      <Sidebar />
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <header className="shrink-0 pt-4 md:pt-6 px-4 md:px-6 lg:px-8 pb-6 border-b border-slate-200 bg-white z-10">
-          
-          <div className="flex flex-col md:flex-row flex-wrap justify-between items-start md:items-center gap-4">
-            <div className="flex flex-col gap-2">
-              <h1 className="text-slate-900 text-3xl md:text-4xl font-black leading-tight tracking-[-0.033em]">Mượn sách</h1>
-              <p className="text-slate-500 text-base font-normal leading-normal">Quét mã QR và thêm người mượn.</p>
-            </div>
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
-              <span className="material-symbols-outlined text-slate-500 text-sm">calendar_today</span>
-              <span className="text-slate-700 text-sm font-medium">{new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
-            </div>
-          </div>
-        </header>
-        <div className="flex-1 overflow-y-auto no-scrollbar px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:py-8">
+      <div className="relative flex min-h-screen w-full flex-row bg-slate-50 text-slate-900 font-display overflow-hidden h-screen">
+        <Sidebar />
+        <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 relative">
+          <div className="flex-1 overflow-y-auto scroll-smooth bg-white no-scrollbar">
+            <header className="px-4 md:px-6 lg:px-8 pt-6 pb-6 border-b border-slate-200 flex flex-col md:flex-row flex-wrap justify-between items-start md:items-center gap-4 bg-white">
+              <div className="flex flex-col gap-2">
+                <h2 className="text-slate-900 text-3xl md:text-4xl font-black leading-tight tracking-[-0.033em]">Mượn sách</h2>
+                <p className="text-slate-500 text-base font-normal leading-normal">Quét mã QR và thêm người mượn.</p>
+              </div>
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
+                <span className="material-symbols-outlined text-slate-500 text-sm">calendar_today</span>
+                <span className="text-slate-700 text-sm font-medium">{new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+              </div>
+            </header>
+            <div className="p-4 md:p-6 lg:px-8 lg:py-8">
           {error && (
             <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 flex items-center gap-2">
               <span className="material-symbols-outlined">error</span>
@@ -467,9 +465,10 @@ export default function MuonPage() {
               </div>
             </div>
           </div>
-        </div>
-      </main>
-    </div>
+            </div>
+          </div>
+        </main>
+      </div>
     </RequireAuth>
   )
 }

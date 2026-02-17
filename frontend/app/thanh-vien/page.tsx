@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Sidebar from '../components/Sidebar'
 import RequireAuth from '../components/RequireAuth'
+import DatePickerButton from '../components/DatePickerButton'
 import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
@@ -188,7 +189,8 @@ export default function ThanhVienPage() {
   const fetchAccounts = async () => {
     try {
       setLoadingAccounts(true)
-      const res = await fetch(apiUrl('/api/accounts'))
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth('/api/accounts'), { headers })
       if (!res.ok) throw new Error('Lỗi tải danh sách tài khoản')
       const data = await res.json()
       setAccounts(Array.isArray(data) ? data : [])
@@ -219,7 +221,8 @@ export default function ThanhVienPage() {
     setExpandedLogDetailId(null)
     setLoadingLogsForModal(true)
     try {
-      const res = await fetch(apiUrl(`/api/activity-log?email=${encodeURIComponent(email)}`))
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth(`/api/activity-log?email=${encodeURIComponent(email)}`), { headers })
       if (res.ok) {
         const data = await res.json()
         setActivityLogsForModal(Array.isArray(data) ? data : [])
@@ -284,7 +287,8 @@ export default function ThanhVienPage() {
     if (!confirm(`Bạn có chắc muốn xóa tài khoản "${acc.fullName || acc.email}"?`)) return
     setError(null)
     try {
-      const res = await fetch(apiUrl(`/api/accounts/${acc.id}/delete`), { method: 'DELETE' })
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth(`/api/accounts/${acc.id}/delete`), { method: 'DELETE', headers })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || 'Lỗi xóa tài khoản')
@@ -477,7 +481,8 @@ export default function ThanhVienPage() {
       if (uid.startsWith('acc-')) {
         try {
           const accId = parseInt(uid.slice(4), 10)
-          const accountsRes = await fetch(apiUrl('/api/accounts'))
+          const { headers: authHeaders } = getApiAuth()
+          const accountsRes = await fetch(apiUrlWithAuth('/api/accounts'), { headers: authHeaders })
           if (accountsRes.ok) {
             const accountsList: Account[] = await accountsRes.json()
             const acc = Array.isArray(accountsList) ? accountsList.find((a: Account) => a.id === accId) : null
@@ -646,7 +651,7 @@ export default function ThanhVienPage() {
         {/* Main Content */}
         <div className="flex-1 overflow-y-auto scroll-smooth bg-white no-scrollbar">
           {/* Header */}
-          <header className="px-4 md:px-6 lg:px-8 pt-4 md:pt-6 pb-6 border-b border-slate-200 flex flex-col md:flex-row flex-wrap justify-between items-start md:items-center gap-4 bg-white">
+          <header className="px-4 md:px-6 lg:px-8 pt-6 pb-6 border-b border-slate-200 flex flex-col md:flex-row flex-wrap justify-between items-start md:items-center gap-4 bg-white">
             <div className="flex flex-col gap-2">
               <h2 className="text-slate-900 text-3xl md:text-4xl font-black leading-tight tracking-[-0.033em]">
                 Quản lý Thành viên
@@ -1215,7 +1220,12 @@ export default function ThanhVienPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Ngày tham gia</label>
-                  <input type="date" value={formMember.joinDate} onChange={e => setFormMember(p => ({ ...p, joinDate: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#137fec]/20 focus:border-[#137fec]" />
+                  <DatePickerButton
+                    value={formMember.joinDate}
+                    onChange={(v) => setFormMember((p) => ({ ...p, joinDate: v }))}
+                    placeholder="Chọn ngày tham gia"
+                    className="h-auto py-2.5 rounded-xl border-slate-200 focus:ring-[#137fec]/20 focus:border-[#137fec]"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Trạng thái</label>

@@ -85,11 +85,6 @@ export default function Sidebar() {
       try {
         const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
         const raw = localStorage.getItem('userInfo')
-        // #region agent log
-        const _parsed = raw ? (() => { try { return JSON.parse(raw) } catch { return {} } })() : {}
-        const _email = (_parsed.accountEmail || _parsed.email || '').trim()
-        fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Sidebar:syncFromBackend',message:'Before auth/me',data:{hasRaw:!!raw,hasToken:!!token,tokenPre:token?String(token).slice(0,10)+'..':'',hasEmail:!!_email,emailLen:_email.length},hypothesisId:'H1,H2,H3',timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         if (!raw) return
         const parsed = JSON.parse(raw)
         const email = (parsed.accountEmail || parsed.email || '').trim()
@@ -98,9 +93,6 @@ export default function Sidebar() {
         const headers: HeadersInit = { 'Content-Type': 'application/json' }
         if (token) headers['Authorization'] = `Bearer ${token}`
         const res = await fetch(url, { credentials: 'include', headers })
-        // #region agent log
-        if (!res.ok) fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Sidebar:syncFromBackend:resNotOk',message:'auth/me failed',data:{status:res.status,urlHadEmail:url.includes('email=')},hypothesisId:'H1',timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         if (!res.ok) return
         const data = await res.json()
         const newPerm = (data.clubPermission || 'user').toLowerCase()
@@ -131,7 +123,7 @@ export default function Sidebar() {
 
   const getLinkClasses = (path: string) => {
     const active = isActive(path)
-    const base = "w-full flex items-center gap-3 px-3 py-2 rounded-lg outline-none focus:outline-none focus-visible:outline-none"
+    const base = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg outline-none focus:outline-none focus-visible:outline-none min-h-[40px] box-border"
     if (active) {
       return `${base} text-white`
     }
@@ -140,9 +132,9 @@ export default function Sidebar() {
 
   return (
     <div className="hidden lg:flex flex-col w-64 border-r bg-white h-screen overflow-y-auto no-scrollbar" style={{ borderRightColor: 'rgba(199, 199, 199, 1)' }}>
-      <div className="flex flex-col px-4 py-6 bg-white text-black">
+      <div className="flex flex-col px-4 md:px-6 lg:px-8 py-6 bg-white text-black">
         {/* Logo & User Info - render placeholder until mounted to avoid hydration mismatch */}
-        <div className="flex gap-3 mb-8">
+        <div className="flex gap-3 mb-6">
           <div className="rounded-full size-10 flex items-center justify-center overflow-hidden shrink-0 bg-[#137fec] text-white font-bold text-sm relative">
             {!mounted ? (
               <span className="invisible" aria-hidden>.</span>
@@ -173,7 +165,7 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* Navigation Menu */}
+        {/* Navigation Menu - gap đồng bộ (gap-2 = 0.5rem) */}
         <div className="flex flex-col gap-2">
           {showOverviewMenu && (
             <Link 
@@ -317,7 +309,7 @@ export default function Sidebar() {
                 router.push('/dang-nhap')
               }
             }}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 hover:text-red-600 hover:bg-red-50 outline-none focus:outline-none focus-visible:outline-none text-left"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg min-h-[40px] box-border text-slate-700 hover:text-red-600 hover:bg-red-50 outline-none focus:outline-none focus-visible:outline-none text-left"
           >
             <span className="material-symbols-outlined">logout</span>
             <span className="text-sm font-medium leading-normal">Đăng xuất</span>

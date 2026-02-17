@@ -1,6 +1,26 @@
 # Phân quyền và chức năng theo vai trò
 
-Tài liệu mô tả **tất cả vai trò** và **quyền hạn** tương ứng trong hệ thống CLB Sách và Hành động THPT Lục Nam.
+Tài liệu mô tả **tất cả vai trò**, **chức năng** và **quyền hạn** tương ứng trong hệ thống CLB Sách và Hành động THPT Lục Nam.
+
+---
+
+## 0. Tổng quan chức năng
+
+| Chức năng | Mô tả ngắn | Trang / Menu | Ai được dùng |
+|-----------|------------|--------------|--------------|
+| **Kho sách** | Quản lý đầu sách, thêm/sửa/xóa sách | `/books` | BCN + Ban Quản lý Sách |
+| **Mã QR** | Tạo mã QR cho sách (đơn lẻ hoặc hàng loạt), in mã | `/qr` | BCN + Ban Quản lý Sách |
+| **Mượn sách** | Tạo phiếu mượn (chọn thành viên + sách), quét QR | `/muon` | BCN + Ban Quản lý Sách |
+| **Trả sách** | Xác nhận trả sách, quét mã sách | `/tra` | BCN + Ban Quản lý Sách |
+| **Thành viên** | Danh sách thành viên CLB + tài khoản đăng nhập; thêm/sửa/xóa thành viên; đổi quyền/xóa tài khoản | `/thanh-vien` | Thành viên có vai trò (trừ user); sửa quyền chỉ BCN |
+| **Tổng quan** | Thống kê mượn/trả, quỹ, quyên góp, sách quá hạn, xếp hạng | `/dashboard` | Thành viên có vai trò |
+| **Tài chính** | Thu chi quỹ: thêm giao dịch, duyệt/chờ duyệt | `/dashboard/tai-chinh` | BCN + Ban NS-TC (thêm); duyệt: BCN + Trưởng/Phó NS-TC |
+| **Thông báo** | Đăng/sửa/xóa thông báo theo kênh (ban, người dùng) | `/thong-bao` | BCN + Trưởng/Phó ban (theo kênh) |
+| **Xếp hạng** | Bảng top đọc sách, quà tặng tháng; cập nhật dữ liệu/sửa quà | `/dashboard/xep-hang` | Xem: mọi người; Cập nhật/Sửa quà: BCN |
+| **Đối tác** | Nhà tài trợ, đối tác chiến lược/cộng đồng; chỉnh nội dung + tải ảnh | `/dashboard/doi-tac`, công khai | Xem: mọi người; Sửa: BCN + Ban NS-TC |
+| **Quyên góp** | Chiến dịch quyên góp, danh sách ủng hộ; tạo/sửa chiến dịch | `/dashboard/quyen-gop`, công khai | Xem/ủng hộ: mọi người; Tạo/Sửa chiến dịch: BCN |
+| **Hồ sơ** | Thông tin cá nhân, avatar, lịch sử mượn, lịch sử thao tác | `/ho-so` | Chủ tài khoản |
+| **Đăng nhập/Đăng ký** | Email + mật khẩu, Google, quên mật khẩu, xác thực email | `/dang-nhap` | Khách / User |
 
 ---
 
@@ -194,7 +214,84 @@ Chỉ hiển thị cho thành viên có vai trò (`club_permission !== 'user'`).
 
 ---
 
-## 6. Tóm tắt theo vai trò
+## 6. Chi tiết từng chức năng và phân quyền
+
+### 6.1. Kho sách (Books)
+- **Chức năng:** Quản lý đầu sách trong thư viện CLB (tên, tác giả, thể loại, nhà xuất bản, giá, trạng thái mượn).
+- **Trang:** `/books` (menu "Kho sách").
+- **Hành động:** Xem danh sách | Thêm sách | Sửa sách | Xóa sách (không xóa được sách đang mượn).
+- **Phân quyền:** Chỉ BCN + Ban Quản lý Sách. Backend kiểm tra `_require_kho_sach`.
+- **API:** `GET/POST /api/books`, `PUT /api/books/<id>`, `DELETE /api/books/<id>/delete`.
+
+### 6.2. Mã QR (QR)
+- **Chức năng:** Tạo sách mới (form nhập thông tin) hoặc tạo hàng loạt sách placeholder để in mã QR; xem danh sách và in mã.
+- **Trang:** `/qr` (menu "Mã QR").
+- **Hành động:** Thêm sách đơn (form) | Tạo mã QR hàng loạt (1–100 bản) | In mã QR.
+- **Phân quyền:** Giống Kho sách (BCN + Ban Quản lý Sách). API `POST /api/books/create`, `POST /api/books/bulk-create` có kiểm tra quyền.
+
+### 6.3. Mượn sách
+- **Chức năng:** Tạo phiếu mượn: chọn thành viên (QR hoặc tay), chọn tối đa 3 sách, xác nhận mượn.
+- **Trang:** `/muon` (menu "Mượn sách").
+- **Hành động:** Xem sách còn trống, danh sách thành viên | Tạo phiếu mượn (bookId + memberId).
+- **Phân quyền:** BCN + Ban Quản lý Sách. Backend: `_require_kho_sach` cho `/api/borrow`, `/api/borrow/create`, `/api/books`, `/api/members` (trang này gọi cả hai).
+
+### 6.4. Trả sách
+- **Chức năng:** Xem danh sách phiếu mượn chưa trả; quét mã sách hoặc chọn phiếu để xác nhận trả.
+- **Trang:** `/tra` (menu "Trả sách").
+- **Hành động:** Xem danh sách mượn | Xác nhận trả (recordId).
+- **Phân quyền:** BCN + Ban Quản lý Sách. API: `GET /api/borrow`, `POST /api/return`.
+
+### 6.5. Thành viên (Members + Accounts)
+- **Chức năng:** Hai tab — (1) Thành viên CLB: danh sách thành viên, thêm/sửa/xóa thành viên; (2) Tài khoản đăng nhập: danh sách tài khoản, đổi quyền (club_permission), xóa tài khoản, xem lịch sử thao tác.
+- **Trang:** `/thanh-vien`.
+- **Hành động:**  
+  - Thành viên CLB: Xem | Thêm | Sửa | Xóa (không xóa được nếu đang có sách mượn chưa trả).  
+  - Tài khoản: Xem | Đổi quyền (chỉ BCN gọi API thành công) | Xóa | Xem lịch sử thao tác (chỉ BCN + Trưởng/Phó ban NS-TC).
+- **Phân quyền:** Vào trang và thao tác thành viên CLB: bất kỳ thành viên có vai trò (`_require_thanh_vien`). Đổi quyền tài khoản: chỉ BCN (`_require_ban_chu_nhiem`). Cột "Lịch sử thao tác": chỉ BCN + head_hr_finance, vice_head_hr_finance.
+
+### 6.6. Tổng quan (Dashboard)
+- **Chức năng:** Thống kê nhanh (mượn hôm nay/tháng, sách quá hạn, thành viên), top đọc sách, sách quá hạn, quỹ, chiến dịch quyên góp, thông báo; link nhanh tới các trang.
+- **Trang:** `/dashboard`.
+- **Phân quyền:** Chỉ thành viên có vai trò mới vào được (user bị redirect về `/dashboard/xep-hang`). API `/api/dashboard/overdue` yêu cầu `_require_thanh_vien`.
+
+### 6.7. Tài chính (Thu chi quỹ)
+- **Chức năng:** Xem tổng quỹ, thu/chi tháng, giao dịch chờ duyệt; thêm giao dịch thu/chi; duyệt giao dịch (người tạo không duyệt được chính mình).
+- **Trang:** `/dashboard/tai-chinh`.
+- **Phân quyền:** Thêm: BCN + Ban NS-TC (head/vice/member_hr_finance). Duyệt: BCN + Trưởng/Phó ban NS-TC (không có member_hr_finance).
+
+### 6.8. Thông báo
+- **Chức năng:** Xem thông báo theo kênh (Ban Chủ nhiệm, Quản lý sách, Truyền thông, NS-TC, Tất cả, Người dùng); tạo/sửa/xóa thông báo (theo đối tượng nhận tin và quyền).
+- **Trang:** `/thong-bao`.
+- **Phân quyền:** Đăng/sửa/xóa: BCN + Trưởng ban + Phó ban. Kênh và đối tượng nhận tin phụ thuộc vai trò (xem bảng mục 5.4).
+
+### 6.9. Bảng xếp hạng (Xếp hạng)
+- **Chức năng:** Xem top đọc sách (tháng/năm), quà tặng tháng; BCN: nút "Cập nhật bảng xếp hạng" (tính lại từ mượn/trả), chỉnh sửa nội dung quà tặng (tiêu đề, ảnh, mô tả).
+- **Trang:** `/dashboard/xep-hang`.
+- **Phân quyền:** Xem: mọi người đăng nhập. Cập nhật bảng + Sửa quà: chỉ BCN. API: `POST /api/dashboard/top-readers/refresh`, `PATCH /api/dashboard/ranking-gifts/update` dùng `_require_ban_chu_nhiem`.
+
+### 6.10. Đối tác (Nhà tài trợ & Đối tác)
+- **Chức năng:** Xem/cập nhật nội dung Nhà tài trợ vàng, Đối tác chiến lược, Đối tác cộng đồng (tên, mô tả, ảnh, link); tải ảnh lên server.
+- **Trang:** `/dashboard/doi-tac` (và trang công khai).
+- **Phân quyền:** Xem: mọi người. Chỉnh sửa + tải ảnh: BCN + Ban NS-TC (`_require_doi_tac_edit`, `_require_doi_tac_edit` cho upload-image).
+
+### 6.11. Quyên góp
+- **Chức năng:** Xem chiến dịch quyên góp, tiến độ, danh sách ủng hộ; BCN: tạo/sửa chiến dịch. Công khai: form ủng hộ (không cần đăng nhập).
+- **Trang:** `/dashboard/quyen-gop`, trang quyên góp công khai.
+- **Phân quyền:** Xem/ủng hộ: mọi người. Tạo/Sửa chiến dịch: chỉ BCN.
+
+### 6.12. Hồ sơ cá nhân
+- **Chức năng:** Xem/sửa tên, email hiển thị, avatar; xem lịch sử mượn, lịch sử thao tác của chính tài khoản.
+- **Trang:** `/ho-so`.
+- **Phân quyền:** Chỉ chủ tài khoản (xem/sửa theo tài khoản đăng nhập). Upload avatar: mọi user đăng nhập (`_get_account_from_request`).
+
+### 6.13. Đăng nhập / Đăng ký
+- **Chức năng:** Đăng nhập email + mật khẩu; đăng nhập Google; đăng ký tài khoản (gửi mã xác thực email, nhập mã + mật khẩu); quên mật khẩu (gửi link đặt lại).
+- **Trang:** `/dang-nhap`.
+- **Phân quyền:** Không phân quyền (trang công cộng). Sau đăng nhập, user/user có vai trò được redirect theo quyền (xem mục 3).
+
+---
+
+## 7. Tóm tắt theo vai trò
 
 | Vai trò | Kho sách | Thành viên | Tài khoản | Thông báo | Thu chi | Xếp hạng | Đối tác | Quyên góp |
 |---------|----------|------------|-----------|-----------|---------|----------|---------|-----------|
@@ -219,8 +316,45 @@ Chỉ hiển thị cho thành viên có vai trò (`club_permission !== 'user'`).
 
 ---
 
-## 7. File tham chiếu
+## 8. Kiểm tra liên kết phân quyền (Frontend – Backend)
+
+### 8.1. Đã liên kết chặt chẽ
+
+| Nhóm | Frontend | Backend | Ghi chú |
+|------|----------|---------|--------|
+| **Kho sách** | `SIDEBAR_SHOW_BOOK_MENU` | `KHO_SACH_PERMISSIONS` + `_require_kho_sach` | Khớp danh sách; API books/borrow/return đều kiểm tra. |
+| **Thành viên (CLB)** | Route `/thanh-vien` (user bị chặn) | `THANH_VIEN_PERMISSIONS` + `_require_thanh_vien` | API members + overdue kiểm tra. |
+| **BCN (Quyên góp, Xếp hạng, Quyền tài khoản)** | `BAN_CHU_NHIEM`, `canEditQuyenGop`, `canEditXepHang` | `QUYEN_GOP_EDIT_PERMISSIONS` + `_require_ban_chu_nhiem` | Khớp; API permission/refresh/ranking-gifts kiểm tra. |
+| **Đối tác** | `DOI_TAC_CAN_EDIT`, `canEditDoiTac` | `DOI_TAC_EDIT_PERMISSIONS` + `_require_doi_tac_edit` | Khớp; doi-tac/update và upload-image kiểm tra. |
+| **Tài chính** | `FINANCE_CAN_ADD_TRANSACTION`, `FINANCE_CAN_APPROVE` | Chưa kiểm tra quyền thêm/duyệt ở backend | UI ẩn nút theo quyền; backend chưa chặn theo vai trò. |
+| **Upload ảnh** | Form chỉ hiện khi có quyền Đối tác/Xếp hạng | `_require_doi_tac_edit` / `_get_account_from_request` | upload-image và upload-avatar có kiểm tra. |
+
+### 8.2. Đã bổ sung kiểm tra quyền (đã sửa)
+
+| API / Hành động | Cách kiểm tra backend |
+|------------------|------------------------|
+| **GET /api/accounts** | `_require_thanh_vien` — chỉ thành viên có vai trò. |
+| **DELETE /api/accounts/<id>/delete** | `_require_ban_chu_nhiem` — chỉ BCN. |
+| **GET /api/activity-log?email=** | Lấy caller từ request; trả log chỉ nếu caller = chủ tài khoản đó **hoặc** caller thuộc `ACTIVITY_LOG_VIEW_PERMISSIONS` (BCN + Trưởng/Phó ban NS-TC). |
+| **POST /api/activity-log/create** | Chỉ cho ghi log khi `email` trong body trùng với tài khoản người gọi. |
+| **GET /api/notifications** | Lọc theo `club_permission` của người gọi (chỉ trả thông báo đúng đối tượng); yêu cầu đăng nhập. |
+| **POST /api/notifications/create**, **PUT/DELETE** | Kiểm tra caller thuộc `NOTIFICATION_POST_PERMISSIONS` (BCN + Trưởng/Phó ban). |
+| **GET /api/dashboard/stats**, **GET /api/fund/stats**, **GET /api/fund/transactions** | `_require_thanh_vien`. |
+| **POST /api/fund/transactions/create** | Caller thuộc `FINANCE_CAN_ADD_PERMISSIONS` (BCN + Ban NS-TC). |
+| **PATCH /api/fund/transactions/<id>/update** (đổi status) | Caller thuộc `FINANCE_CAN_APPROVE_PERMISSIONS` (BCN + Trưởng/Phó ban NS-TC). |
+
+Frontend đã gửi `Authorization` và/hoặc `accountEmail` cho các API trên (getApiAuth, apiUrlWithAuth).
+
+### 8.3. Khác biệt Frontend – Backend (cố ý)
+
+| Chức năng | Frontend | Backend | Lý do |
+|------------|----------|---------|--------|
+| **Đổi quyền tài khoản** | Nút hiện cho BCN + Ban NS-TC (`CAN_MANAGE_ACCOUNTS`) | Chỉ BCN gọi thành công (`_require_ban_chu_nhiem`) | Cho Ban NS-TC thấy nút để biết chức năng; API từ chối 403 nếu không phải BCN. |
+
+---
+
+## 9. File tham chiếu
 
 - **Frontend:** `frontend/lib/permissions.ts`
 - **Frontend (Thành viên):** `frontend/app/thanh-vien/page.tsx` (CAN_MANAGE_ACCOUNTS, CAN_VIEW_ACTIVITY_LOG)
-- **Backend:** `backend/api/views.py` (`_require_ban_chu_nhiem`, `_require_doi_tac_edit`, `_require_kho_sach`, `_require_thanh_vien`, `KHO_SACH_PERMISSIONS`, `THANH_VIEN_PERMISSIONS`, `QUYEN_GOP_EDIT_PERMISSIONS`, `DOI_TAC_EDIT_PERMISSIONS`)
+- **Backend:** `backend/api/views.py` — helpers: `_require_ban_chu_nhiem`, `_require_doi_tac_edit`, `_require_kho_sach`, `_require_thanh_vien`, `_get_account_from_request`. Hằng số: `KHO_SACH_PERMISSIONS`, `THANH_VIEN_PERMISSIONS`, `QUYEN_GOP_EDIT_PERMISSIONS`, `DOI_TAC_EDIT_PERMISSIONS`, `ACTIVITY_LOG_VIEW_PERMISSIONS`, `NOTIFICATION_POST_PERMISSIONS`, `FINANCE_CAN_ADD_PERMISSIONS`, `FINANCE_CAN_APPROVE_PERMISSIONS`.

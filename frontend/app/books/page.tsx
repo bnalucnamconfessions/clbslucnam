@@ -175,39 +175,38 @@ export default function BooksPage() {
         <Sidebar />
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 relative">
           <div className="flex-1 overflow-y-auto scroll-smooth bg-white no-scrollbar">
-            <div className="flex flex-col gap-6 w-full p-4 md:p-6 lg:px-8 lg:py-8">
-            {error && (
-              <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 flex items-center gap-2">
-                <span className="material-symbols-outlined">error</span>
-                {error}
+            <header className="px-4 md:px-6 lg:px-8 pt-6 pb-6 border-b border-slate-200 flex flex-col md:flex-row flex-wrap justify-between items-start md:items-center gap-4 bg-white">
+              <div className="flex flex-col gap-2">
+                <h2 className="text-slate-900 text-3xl md:text-4xl font-black leading-tight tracking-[-0.033em]">
+                  Quản lý kho sách
+                </h2>
+                <p className="text-slate-500 text-base font-normal leading-normal">
+                  Theo dõi, chỉnh sửa và cập nhật danh mục sách trong thư viện CLB
+                </p>
               </div>
-            )}
-            {/* Title and Action Buttons */}
-          <div className="flex flex-col md:flex-row flex-wrap justify-between items-start md:items-center gap-4 pb-6 border-b border-slate-200">
-          <div className="flex flex-col gap-2">
-            <h1 className="text-slate-900 text-3xl md:text-4xl font-black leading-tight tracking-[-0.033em]">
-              Quản lý kho sách
-            </h1>
-            <p className="text-slate-500 text-base font-normal leading-normal">
-              Theo dõi, chỉnh sửa và cập nhật danh mục sách trong thư viện CLB
-            </p>
-          </div>
-          <div className="flex gap-3 w-full md:w-auto">
-            <button className="flex flex-1 md:flex-none cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-white hover:bg-slate-50 text-slate-700 text-sm font-bold tracking-[0.015em] gap-2 transition-all border border-slate-300 shadow-sm leading-none">
-              <span className="material-symbols-outlined text-[18px]">file_upload</span>
-              <span className="truncate">Nhập Excel</span>
-            </button>
-            <button 
-              onClick={() => setShowAddModal(true)}
-              className="flex flex-1 md:flex-none cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-[#137fec] hover:bg-[#0f6fd6] text-white text-sm font-bold tracking-[0.015em] gap-2 transition-all shadow-[0_4px_6px_-1px_rgba(19,127,236,0.2)] leading-none"
-            >
-              <span className="material-symbols-outlined text-[18px]">add</span>
-              <span className="truncate">Thêm sách mới</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Summary Cards */}
+              <div className="flex gap-3 w-full md:w-auto">
+                <button className="flex flex-1 md:flex-none cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-white hover:bg-slate-50 text-slate-700 text-sm font-bold tracking-[0.015em] gap-2 transition-all border border-slate-300 shadow-sm leading-none">
+                  <span className="material-symbols-outlined text-[18px]">file_upload</span>
+                  <span className="truncate">Nhập Excel</span>
+                </button>
+                <button 
+                  onClick={() => setShowAddModal(true)}
+                  className="flex flex-1 md:flex-none cursor-pointer items-center justify-center rounded-lg h-10 px-4 bg-[#137fec] hover:bg-[#0f6fd6] text-white text-sm font-bold tracking-[0.015em] gap-2 transition-all shadow-[0_4px_6px_-1px_rgba(19,127,236,0.2)] leading-none"
+                >
+                  <span className="material-symbols-outlined text-[18px]">add</span>
+                  <span className="truncate">Thêm sách mới</span>
+                </button>
+              </div>
+            </header>
+            <div className="p-4 md:p-6 lg:px-8 lg:py-8">
+              {error && (
+                <div className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 flex items-center gap-2">
+                  <span className="material-symbols-outlined">error</span>
+                  {error}
+                </div>
+              )}
+              <div className="flex flex-col gap-6 w-full">
+                {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Tổng đầu sách */}
           <div className="flex flex-col gap-2 rounded-xl p-5 border border-slate-200 bg-white shadow-sm">
@@ -400,9 +399,7 @@ export default function BooksPage() {
             </div>
           </div>
           )}
-        </div>
-        </div>
-          </div>
+              </div>
 
         {/* Modal Sửa sách */}
         {showEditModal && editingBook && (
@@ -563,6 +560,9 @@ export default function BooksPage() {
             </div>
           </div>
         )}
+            </div>
+          </div>
+        </div>
       </main>
     </div>
     </RequireAuth>
