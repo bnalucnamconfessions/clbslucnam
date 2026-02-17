@@ -38,6 +38,7 @@ urlpatterns = [
     path("api/members/<int:member_id>/delete", views.member_delete),
     path("api/members/<int:member_id>", views.member_update),
     path("api/notifications", views.notification_list),
+    path("api/notifications/unread-count", views.notification_unread_count),
     path("api/notifications/create", views.notification_create),
     path("api/notifications/<int:notif_id>/delete", views.notification_delete),
     path("api/notifications/<int:notif_id>/read", views.notification_mark_read),

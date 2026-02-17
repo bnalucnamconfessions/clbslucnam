@@ -482,7 +482,9 @@ export default function ThongBaoPage() {
             method: 'POST',
             headers: { ...headers, 'Content-Type': 'application/json' },
             body: JSON.stringify({ email }),
-          }).catch(() => {})
+          })
+            .then(() => { if (typeof window !== 'undefined') window.dispatchEvent(new Event('notificationsUnreadCountChanged')) })
+            .catch(() => {})
         }
       }
     } catch {}

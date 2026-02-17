@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useState, useEffect, useLayoutEffect } from 'react'
-import { apiUrl } from '../../lib/api'
+import { apiUrl, getApiAuth, apiUrlWithAuth } from '../../lib/api'
 import { SIDEBAR_SHOW_BOOK_MENU, PERM_LABELS, normalizePermission } from '../../lib/permissions'
 import { logActivity } from '../../lib/activityLog'
 
@@ -15,6 +15,7 @@ export default function Sidebar() {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
   const [userInfo, setUserInfo] = useState({ fullName: '', avatar: '', role: '', clubPermission: 'user' })
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
   const showBookMenu = SIDEBAR_SHOW_BOOK_MENU.includes(userInfo.clubPermission || '')
   const showOverviewMenu = userInfo.clubPermission !== 'user'
   const showDoiTacMenu = true
@@ -77,6 +78,28 @@ export default function Sidebar() {
       window.removeEventListener('userInfoUpdated', handleStorageChange)
     }
   }, [])
+
+  const fetchUnreadNotificationCount = () => {
+    if (typeof window === 'undefined') return
+    const { headers } = getApiAuth()
+    if (!headers['Authorization'] && !localStorage.getItem('userInfo')) return
+    fetch(apiUrlWithAuth('/api/notifications/unread-count'), { credentials: 'include', headers })
+      .then((res) => (res.ok ? res.json() : { count: 0 }))
+      .then((data) => setUnreadNotificationCount(typeof data.count === 'number' ? data.count : 0))
+      .catch(() => setUnreadNotificationCount(0))
+  }
+
+  useEffect(() => {
+    if (!mounted) return
+    fetchUnreadNotificationCount()
+    const onUnreadChanged = () => fetchUnreadNotificationCount()
+    window.addEventListener('notificationsUnreadCountChanged', onUnreadChanged)
+    const t = setInterval(fetchUnreadNotificationCount, 45 * 1000)
+    return () => {
+      window.removeEventListener('notificationsUnreadCountChanged', onUnreadChanged)
+      clearInterval(t)
+    }
+  }, [mounted])
 
   // Đồng bộ với backend: luôn cập nhật role + clubPermission từ auth/me để Sidebar, Hồ sơ, Thông tin CLB hiển thị cùng một nguồn
   useEffect(() => {
@@ -179,13 +202,21 @@ export default function Sidebar() {
             </Link>
           )}
           <Link 
-            className={getLinkClasses('/thong-bao')} 
+            className={`${getLinkClasses('/thong-bao')} relative`} 
             style={isActive('/thong-bao') ? { backgroundColor: '#137fec' } : {}}
             href="/thong-bao"
             scroll={false}
           >
             <span className={`material-symbols-outlined ${isActive('/thong-bao') ? 'fill-1' : ''}`}>campaign</span>
             <span className="text-sm font-medium leading-normal">Thông báo</span>
+            {unreadNotificationCount > 0 && (
+              <span
+                className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-xs font-semibold"
+                aria-label={`${unreadNotificationCount} thông báo chưa đọc`}
+              >
+                {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+              </span>
+            )}
           </Link>
           {showBookMenu && (
             <>

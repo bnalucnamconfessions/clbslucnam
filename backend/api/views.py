@@ -1267,6 +1267,28 @@ def _audience_to_permissions(audience):
 
 
 @api_view(["GET"])
+def notification_unread_count(request):
+    """Số thông báo chưa đọc của người gọi (để hiển thị badge trên sidebar)."""
+    caller, err = _get_account_from_request(request)
+    if err is not None:
+        return err
+    try:
+        rows = Notification.objects.prefetch_related("read_receipts").all()
+        caller_perm = (caller.club_permission or "user").strip().lower()
+        count = 0
+        for r in rows:
+            perms = _audience_to_permissions(r.audience)
+            if perms and caller_perm not in perms:
+                continue
+            read_ids = {rr.account_id for rr in r.read_receipts.all()}
+            if caller.id not in read_ids:
+                count += 1
+        return Response({"count": count})
+    except Exception:
+        return Response({"count": 0})
+
+
+@api_view(["GET"])
 def notification_list(request):
     """Danh sách thông báo. Chỉ trả thông báo đúng đối tượng theo club_permission của người gọi."""
     caller, err = _get_account_from_request(request)
