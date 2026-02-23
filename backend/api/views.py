@@ -3,7 +3,7 @@ API views cho dashboard và auth.
 """
 import os
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
@@ -133,7 +133,7 @@ def auth_me(request):
     perm = acc.club_permission or "user"
     role_display = _ROLE_DISPLAY.get(perm, "Người dùng")
     join_date_str = None
-    member = Member.objects.filter(user_id=f"acc-{acc.id}").first()
+    member = Member.objects.filter(user_id__in=[_account_user_id(acc), f"acc-{acc.id}"]).first()
     if member and member.join_date:
         join_date_str = member.join_date.strftime("%d/%m/%Y")
     return Response({
@@ -602,16 +602,13 @@ def account_list(request):
     if err is not None:
         return err
     rows = list(Account.objects.all())
-    member_user_ids = set(
-        Member.objects.filter(user_id__startswith="acc-").values_list("user_id", flat=True)
-    )
+    uid_numeric = {_member_uid_to_acc_id(uid) for uid in Member.objects.values_list("user_id", flat=True) if _member_uid_to_acc_id(uid) is not None}
     for acc in rows:
         perm = getattr(acc, "club_permission", None) or "user"
         if perm != "user":
-            user_id = f"acc-{acc.id}"
-            if user_id not in member_user_ids:
+            if acc.id not in uid_numeric:
                 _sync_account_member(acc, perm)
-                member_user_ids.add(user_id)
+                uid_numeric.add(acc.id)
     return Response([
         {
             "id": r.id,
@@ -706,12 +703,34 @@ def account_update_profile(request):
     if update_fields:
         acc.save(update_fields=update_fields)
         if "avatar_url" in update_fields:
-            Member.objects.filter(user_id=f"acc-{acc.id}").update(avatar_url=acc.avatar_url)
+            Member.objects.filter(user_id__in=[_account_user_id(acc), f"acc-{acc.id}"]).update(avatar_url=acc.avatar_url)
     canonical_email = (acc.email or getattr(acc, "display_email", "") or "").strip()
     return Response({"id": acc.id, "fullName": acc.full_name, "email": canonical_email})
 
 
 # Phân quyền: chỉ Trưởng ban thuộc Ban chủ nhiệm, Phó ban không (logic nhóm ở frontend: BAN_CHU_NHIEM).
+
+
+def _account_user_id(acc):
+    """user_id lưu cho Member liên kết Account: chỉ dùng số (id tài khoản), không prefix acc-."""
+    return str(acc.id)
+
+
+def _member_uid_to_acc_id(user_id):
+    """Lấy account id từ member.user_id; hỗ trợ cả '8' và 'acc-8' (legacy)."""
+    if not user_id:
+        return None
+    s = str(user_id).strip()
+    if s.isdigit():
+        return int(s)
+    if s.startswith("acc-"):
+        try:
+            return int(s[4:].lstrip())
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 PERM_TO_MEMBER = {
     "admin": ("", "Quản trị viên"),
     "chairperson": ("Ban Chủ nhiệm", "Chủ nhiệm"),
@@ -763,8 +782,8 @@ def account_update_permission(request, account_id):
 
 
 def _sync_account_member(acc, perm):
-    """Đồng bộ Member tương ứng với Account khi đổi quyền."""
-    user_id = f"acc-{acc.id}"
+    """Đồng bộ Member tương ứng với Account khi đổi quyền. user_id = id tài khoản (số), không prefix acc-."""
+    user_id = _account_user_id(acc)
     dept, role = PERM_TO_MEMBER.get(perm, ("", "Người dùng"))
     if perm != "user":
         member, created = Member.objects.get_or_create(
@@ -787,7 +806,7 @@ def _sync_account_member(acc, perm):
                 member.avatar_url = acc.avatar_url
             member.save(update_fields=["name", "department", "role", "status", "avatar_url"])
     else:
-        Member.objects.filter(user_id=user_id).update(status="inactive")
+        Member.objects.filter(user_id__in=[user_id, f"acc-{acc.id}"]).update(status="inactive")
 
 
 @csrf_exempt
@@ -801,8 +820,8 @@ def account_delete(request, account_id):
         acc = Account.objects.get(pk=account_id)
     except Account.DoesNotExist:
         return Response({"detail": "Tài khoản không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
-    user_id = f"acc-{acc.id}"
-    member = Member.objects.filter(user_id=user_id).first()
+    user_id = _account_user_id(acc)
+    member = Member.objects.filter(user_id__in=[user_id, f"acc-{acc.id}"]).first()
     if member and BorrowRecord.objects.filter(member=member, return_date__isnull=True).exists():
         return Response({"detail": "Không thể xóa tài khoản vì thành viên liên kết đang có sách mượn chưa trả"}, status=status.HTTP_400_BAD_REQUEST)
     if member:
@@ -813,30 +832,107 @@ def account_delete(request, account_id):
 
 @api_view(["GET"])
 def dashboard_stats(request):
-    """Lấy thống kê tổng quan. Chỉ thành viên có vai trò."""
+    """Lấy thống kê tổng quan từ dữ liệu thực (BorrowRecord, ...). Chỉ thành viên có vai trò."""
     _, err = _require_thanh_vien(request)
     if err is not None:
         return err
-    row = DashboardStats.objects.first()
-    if not row:
-        return Response({
-            "borrowToday": 0,
-            "borrowMonth": 0,
-            "overdueCount": 0,
-            "activeMembers": 0,
-            "borrowTodayChange": 0,
-            "borrowMonthChange": 0,
-            "activeMembersChange": 0,
-        })
+    today = date.today()
+    # Đếm trực tiếp từ phiếu mượn
+    borrow_today = BorrowRecord.objects.filter(borrow_date=today).count()
+    borrow_month = BorrowRecord.objects.filter(
+        borrow_date__year=today.year,
+        borrow_date__month=today.month,
+    ).count()
+    # Sách quá hạn: đang mượn và due_date < hôm nay
+    overdue_count = BorrowRecord.objects.filter(
+        return_date__isnull=True,
+        due_date__lt=today,
+    ).count()
+    # Thành viên có vai trò (active)
+    active_members = Member.objects.filter(status="active").count()
+    # Phần trăm thay đổi: so với ngày trước / tháng trước (đơn giản)
+    yesterday = today - timedelta(days=1)
+    borrow_yesterday = BorrowRecord.objects.filter(borrow_date=yesterday).count()
+    borrow_today_change = (float(borrow_today - borrow_yesterday) / borrow_yesterday * 100) if borrow_yesterday else 0
+    prev_month = today.month - 1
+    prev_year = today.year
+    if prev_month <= 0:
+        prev_month += 12
+        prev_year -= 1
+    borrow_prev_month = BorrowRecord.objects.filter(
+        borrow_date__year=prev_year,
+        borrow_date__month=prev_month,
+    ).count()
+    borrow_month_change = (float(borrow_month - borrow_prev_month) / borrow_prev_month * 100) if borrow_prev_month else 0
     return Response({
-        "borrowToday": row.borrow_today,
-        "borrowMonth": row.borrow_month,
-        "overdueCount": row.overdue_count,
-        "activeMembers": row.active_members,
-        "borrowTodayChange": float(row.borrow_today_change or 0),
-        "borrowMonthChange": float(row.borrow_month_change or 0),
-        "activeMembersChange": float(row.active_members_change or 0),
+        "borrowToday": borrow_today,
+        "borrowMonth": borrow_month,
+        "overdueCount": overdue_count,
+        "activeMembers": active_members,
+        "borrowTodayChange": round(borrow_today_change, 1),
+        "borrowMonthChange": round(borrow_month_change, 1),
+        "activeMembersChange": 0,
     })
+
+
+@api_view(["GET"])
+def dashboard_borrow_trend(request):
+    """Xu hướng mượn/trả theo ngày (7 ngày), tháng (12 tháng), hoặc năm (5 năm). Trả về [{ label, borrowCount, returnCount }]."""
+    _, err = _require_thanh_vien(request)
+    if err is not None:
+        return err
+    period = (request.GET.get("period") or "day").strip().lower()
+    if period not in ("day", "month", "year"):
+        period = "day"
+    today = date.today()
+    result = []
+    if period == "day":
+        # 7 ngày gần nhất (kể cả hôm nay)
+        day_labels = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"]
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            borrow_count = BorrowRecord.objects.filter(borrow_date=d).count()
+            return_count = BorrowRecord.objects.filter(return_date=d).count()
+            result.append({
+                "label": day_labels[d.weekday()],
+                "borrowCount": borrow_count,
+                "returnCount": return_count,
+            })
+    elif period == "month":
+        # 12 tháng gần nhất (tháng hiện tại là tháng 1)
+        thang_vn = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12"]
+        for i in range(11, -1, -1):
+            # tháng cách đây i tháng
+            year = today.year
+            month = today.month - i
+            while month <= 0:
+                month += 12
+                year -= 1
+            borrow_count = BorrowRecord.objects.filter(
+                borrow_date__year=year,
+                borrow_date__month=month,
+            ).count()
+            return_count = BorrowRecord.objects.filter(
+                return_date__year=year,
+                return_date__month=month,
+            ).count()
+            result.append({
+                "label": thang_vn[month - 1],
+                "borrowCount": borrow_count,
+                "returnCount": return_count,
+            })
+    else:
+        # 5 năm gần nhất
+        for i in range(4, -1, -1):
+            y = today.year - i
+            borrow_count = BorrowRecord.objects.filter(borrow_date__year=y).count()
+            return_count = BorrowRecord.objects.filter(return_date__year=y).count()
+            result.append({
+                "label": str(y),
+                "borrowCount": borrow_count,
+                "returnCount": return_count,
+            })
+    return Response(result)
 
 
 def _sync_top_readers_from_borrows():
@@ -851,14 +947,8 @@ def _sync_top_readers_from_borrows():
     )
     member_ids = [r["member_id"] for r in qs]
     members = {m.id: m for m in Member.objects.filter(id__in=member_ids)}
-    # Lấy avatar từ Account nếu member có user_id acc-*
-    acc_ids = []
-    for m in members.values():
-        if m.user_id and str(m.user_id).startswith("acc-"):
-            try:
-                acc_ids.append(int(str(m.user_id).replace("acc-", "")))
-            except (ValueError, TypeError):
-                pass
+    # Lấy avatar từ Account nếu member liên kết tài khoản (user_id = id số hoặc acc-* legacy)
+    acc_ids = [aid for m in members.values() if (aid := _member_uid_to_acc_id(m.user_id)) is not None]
     accounts = {a.id: a for a in Account.objects.filter(id__in=acc_ids)} if acc_ids else {}
     TopReader.objects.all().delete()
     for rank, row in enumerate(qs, start=1):
@@ -867,14 +957,11 @@ def _sync_top_readers_from_borrows():
             continue
         name = member.name or "Thành viên"
         avatar_url = member.avatar_url
-        if member.user_id and str(member.user_id).startswith("acc-"):
-            try:
-                aid = int(str(member.user_id).replace("acc-", ""))
-                acc = accounts.get(aid)
-                if acc and acc.avatar_url:
-                    avatar_url = acc.avatar_url
-            except (ValueError, TypeError):
-                pass
+        aid = _member_uid_to_acc_id(member.user_id)
+        if aid is not None:
+            acc = accounts.get(aid)
+            if acc and acc.avatar_url:
+                avatar_url = acc.avatar_url
         TopReader.objects.create(
             name=name,
             book_count=row["book_count"],
@@ -970,18 +1057,22 @@ def ranking_gifts_update(request):
 
 @api_view(["GET"])
 def overdue_books(request):
-    """Lấy danh sách sách quá hạn chưa trả. Yêu cầu thành viên có vai trò."""
+    """Lấy danh sách sách quá hạn chưa trả từ BorrowRecord. Yêu cầu thành viên có vai trò."""
     _, err = _require_thanh_vien(request)
     if err is not None:
         return err
-    rows = OverdueBook.objects.all()
+    today = date.today()
+    rows = BorrowRecord.objects.select_related("book", "member").filter(
+        return_date__isnull=True,
+        due_date__lt=today,
+    ).order_by("due_date")
     return Response([
         {
             "id": r.id,
-            "bookTitle": r.book_title,
-            "memberName": r.member_name,
+            "bookTitle": r.book.title if r.book else "",
+            "memberName": r.member.name if r.member else "",
             "dueDate": r.due_date.isoformat() if r.due_date else None,
-            "daysOverdue": r.days_overdue,
+            "daysOverdue": (today - r.due_date).days if r.due_date else 0,
         }
         for r in rows
     ])
@@ -1104,36 +1195,29 @@ def member_list(request):
     if err is not None:
         return err
     for acc in Account.objects.exclude(club_permission="user"):
-        user_id = f"acc-{acc.id}"
-        if not Member.objects.filter(user_id=user_id).exists():
+        uid = _account_user_id(acc)
+        if not Member.objects.filter(user_id__in=[uid, f"acc-{acc.id}"]).exists():
             _sync_account_member(acc, acc.club_permission or "user")
     rows = list(Member.objects.all())
-    acc_ids = []
-    for r in rows:
-        if r.user_id and str(r.user_id).startswith("acc-"):
-            try:
-                acc_ids.append(int(str(r.user_id).replace("acc-", "")))
-            except (ValueError, TypeError):
-                pass
+    acc_ids = [aid for r in rows if (aid := _member_uid_to_acc_id(r.user_id)) is not None]
     accounts_map = {a.id: a for a in Account.objects.filter(id__in=acc_ids)} if acc_ids else {}
     result = []
     for r in rows:
         avatar_url = r.avatar_url
         email = None
-        if r.user_id and str(r.user_id).startswith("acc-"):
-            try:
-                acc_id = int(str(r.user_id).replace("acc-", ""))
-                acc = accounts_map.get(acc_id)
-                if acc:
-                    if acc.avatar_url:
-                        avatar_url = acc.avatar_url
-                    email = acc.email or getattr(acc, "display_email", None) or ""
-            except (ValueError, TypeError):
-                pass
+        acc_id = _member_uid_to_acc_id(r.user_id)
+        if acc_id is not None:
+            acc = accounts_map.get(acc_id)
+            if acc:
+                if acc.avatar_url:
+                    avatar_url = acc.avatar_url
+                email = acc.email or getattr(acc, "display_email", None) or ""
+        # Một id thống nhất: id = mã thành viên (userId), không dùng pk nội bộ
+        user_id_display = str(acc_id) if acc_id is not None else (r.user_id or "")
         result.append({
-            "id": str(r.id),
+            "id": user_id_display,
             "name": r.name,
-            "userId": r.user_id,
+            "userId": user_id_display,
             "email": email or "",
             "department": r.department or "",
             "role": r.role or "",
@@ -1151,33 +1235,53 @@ def member_create(request):
     if err is not None:
         return err
     data = request.data
+    uid = (data.get("userId") or "").strip()
     member = Member.objects.create(
         name=data.get("name", ""),
-        user_id=data.get("userId", ""),
+        user_id=uid,
         department=data.get("department", ""),
         role=data.get("role", ""),
         status=data.get("status", "active"),
     )
-    return Response({"id": member.id, "name": member.name}, status=status.HTTP_201_CREATED)
+    return Response({"id": member.user_id or str(member.id), "name": member.name}, status=status.HTTP_201_CREATED)
+
+
+def _resolve_member_by_uid(member_uid):
+    """Tìm Member theo mã thành viên (user_id) hoặc pk hoặc account id hiển thị. Trả (member, None) hoặc (None, error_response)."""
+    uid = (member_uid or "").strip()
+    member = Member.objects.filter(user_id=uid).first()
+    if member:
+        return member, None
+    if uid.isdigit():
+        try:
+            member = Member.objects.get(pk=int(uid))
+            return member, None
+        except Member.DoesNotExist:
+            pass
+        # id từ member_list có thể là account id (user_id_display); tìm member có user_id map tới account đó
+        acc_id = int(uid)
+        member = Member.objects.filter(user_id__in=[uid, f"acc-{acc_id}"]).first()
+        if member:
+            return member, None
+    return None, Response({"detail": "Thành viên không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
 
 
 @csrf_exempt
 @api_view(["PUT", "PATCH"])
-def member_update(request, member_id):
-    """Cập nhật thành viên."""
+def member_update(request, member_uid):
+    """Cập nhật thành viên. member_uid = mã thành viên (userId) hoặc pk."""
     _, err = _require_thanh_vien(request)
     if err is not None:
         return err
-    try:
-        member = Member.objects.get(pk=member_id)
-    except Member.DoesNotExist:
-        return Response({"detail": "Thành viên không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
+    member, err_resp = _resolve_member_by_uid(member_uid)
+    if err_resp is not None:
+        return err_resp
     data = request.data
     if "name" in data:
         member.name = data.get("name", "")
     if "userId" in data:
-        new_uid = data.get("userId", "")
-        if new_uid and Member.objects.exclude(pk=member_id).filter(user_id=new_uid).exists():
+        new_uid = data.get("userId", "").strip()
+        if new_uid and Member.objects.exclude(pk=member.pk).filter(user_id=new_uid).exists():
             return Response({"detail": "Mã thành viên đã tồn tại"}, status=status.HTTP_400_BAD_REQUEST)
         member.user_id = new_uid
     if "department" in data:
@@ -1198,15 +1302,15 @@ def member_update(request, member_id):
             member.join_date = None
     member.save()
 
-    # Đồng bộ Account liên kết (user_id = acc-{id}) và các account cùng email để hai nơi xét quyền luôn khớp
+    # Đồng bộ Account liên kết (user_id = id số hoặc acc-* legacy) và các account cùng email để hai nơi xét quyền luôn khớp
     uid = (member.user_id or "").strip()
-    if uid.startswith("acc-"):
+    acc_id = _member_uid_to_acc_id(uid)
+    if acc_id is not None:
         valid_perms = ("admin", "chairperson", "vice_chairperson", "head_book", "vice_head_book", "head_communication", "vice_head_communication", "head_hr_finance", "vice_head_hr_finance", "member_book", "member_communication", "member_hr_finance", "user")
         perm = (data.get("clubPermission") or data.get("club_permission") or "").strip().lower()
         if perm not in valid_perms:
             perm = MEMBER_TO_PERM.get((member.department or "", member.role or ""), "user")
         try:
-            acc_id = int(uid[4:])
             acc = Account.objects.filter(pk=acc_id).first()
             if acc:
                 acc.club_permission = perm
@@ -1219,20 +1323,19 @@ def member_update(request, member_id):
         except (ValueError, TypeError):
             pass
 
-    return Response({"id": member.id, "name": member.name})
+    return Response({"id": member.user_id or str(member.id), "name": member.name})
 
 
 @csrf_exempt
 @api_view(["DELETE"])
-def member_delete(request, member_id):
-    """Xóa thành viên. Không xóa được nếu đang có sách mượn chưa trả."""
+def member_delete(request, member_uid):
+    """Xóa thành viên. member_uid = mã thành viên (userId) hoặc pk. Không xóa được nếu đang có sách mượn chưa trả."""
     _, err = _require_thanh_vien(request)
     if err is not None:
         return err
-    try:
-        member = Member.objects.get(pk=member_id)
-    except Member.DoesNotExist:
-        return Response({"detail": "Thành viên không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
+    member, err_resp = _resolve_member_by_uid(member_uid)
+    if err_resp is not None:
+        return err_resp
     if BorrowRecord.objects.filter(member=member, return_date__isnull=True).exists():
         return Response({"detail": "Không thể xóa thành viên đang có sách mượn chưa trả"}, status=status.HTTP_400_BAD_REQUEST)
     member.delete()
@@ -1278,8 +1381,15 @@ def notification_unread_count(request):
         count = 0
         for r in rows:
             perms = _audience_to_permissions(r.audience)
-            if perms and caller_perm not in perms:
+            # Chỉ đếm thông báo dành cho đối tượng có caller_perm; bỏ qua nếu audience trống/không map
+            if not perms:
                 continue
+            if caller_perm not in perms:
+                # BCN (admin, chairperson, vice_chairperson) cũng được xem thông báo Ban Quản lý Sách
+                if "quản lý sách" in (r.audience or "").lower() and caller_perm in ("admin", "chairperson", "vice_chairperson"):
+                    pass
+                else:
+                    continue
             read_ids = {rr.account_id for rr in r.read_receipts.all()}
             if caller.id not in read_ids:
                 count += 1
@@ -1298,10 +1408,27 @@ def notification_list(request):
         rows = Notification.objects.prefetch_related("read_receipts__account").all()
         out = []
         caller_perm = (caller.club_permission or "user").strip().lower()
+        # #region agent log
+        _book_audience_count = sum(1 for r in rows if (r.audience or "").strip() and "quản lý sách" in (r.audience or "").lower())
+        _visible_to_caller = sum(1 for r in rows if (_p := _audience_to_permissions(r.audience)) and caller_perm in _p)
+        try:
+            import json
+            with open("debug-fd8ec8.log", "a", encoding="utf-8") as _f:
+                _f.write(json.dumps({"sessionId": "fd8ec8", "location": "views.py:notification_list", "message": "List filter", "data": {"caller_perm": caller_perm, "book_audience_notif_count": _book_audience_count, "visible_to_caller_count": _visible_to_caller}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H4"}) + "\n")
+        except Exception:
+            pass
+        # #endregion
         for r in rows:
             perms = _audience_to_permissions(r.audience)
-            if perms and caller_perm not in perms:
+            # Chỉ trả thông báo dành cho đối tượng có caller_perm; bỏ qua nếu audience trống/không map
+            if not perms:
                 continue
+            if caller_perm not in perms:
+                # BCN (admin, chairperson, vice_chairperson) cũng được xem thông báo Ban Quản lý Sách
+                if "quản lý sách" in (r.audience or "").lower() and caller_perm in ("admin", "chairperson", "vice_chairperson"):
+                    pass
+                else:
+                    continue
             read_receipts = list(r.read_receipts.all())
             read_by = [
                 {"name": rr.account.full_name or rr.account.email or "—", "email": rr.account.email or rr.account.display_email or ""}
@@ -1525,18 +1652,20 @@ def borrow_list(request):
     if err is not None:
         return err
     rows = BorrowRecord.objects.select_related("book", "member").filter(return_date__isnull=True)
-    return Response([
-        {
+    result = []
+    for r in rows:
+        uid = r.member.user_id or ""
+        member_id_display = str(_member_uid_to_acc_id(uid)) if _member_uid_to_acc_id(uid) is not None else (uid or str(r.member_id))
+        result.append({
             "id": r.id,
             "bookId": r.book_id,
             "bookTitle": r.book.title,
-            "memberId": r.member_id,
+            "memberId": member_id_display,
             "memberName": r.member.name,
             "borrowDate": r.borrow_date.isoformat(),
             "dueDate": r.due_date.isoformat(),
-        }
-        for r in rows
-    ])
+        })
+    return Response(result)
 
 
 @csrf_exempt
@@ -1547,14 +1676,16 @@ def borrow_create(request):
         return err
     data = request.data
     book_id = data.get("bookId")
-    member_id = data.get("memberId")
-    if not book_id or not member_id:
+    member_id_param = data.get("memberId")
+    if not book_id or member_id_param is None:
         return Response({"detail": "Thiếu bookId hoặc memberId"}, status=status.HTTP_400_BAD_REQUEST)
+    member, err_resp = _resolve_member_by_uid(str(member_id_param))
+    if err_resp is not None:
+        return err_resp
     try:
         book = Book.objects.get(pk=book_id)
-        member = Member.objects.get(pk=member_id)
-    except (Book.DoesNotExist, Member.DoesNotExist):
-        return Response({"detail": "Sách hoặc thành viên không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
+    except Book.DoesNotExist:
+        return Response({"detail": "Sách không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
     if book.is_borrowed:
         return Response({"detail": "Sách đang được mượn"}, status=status.HTTP_400_BAD_REQUEST)
     from datetime import date, timedelta
@@ -1576,7 +1707,7 @@ def borrow_create(request):
 @csrf_exempt
 @api_view(["POST"])
 def return_book(request):
-    _, err = _require_kho_sach(request)
+    caller, err = _require_kho_sach(request)
     if err is not None:
         return err
     data = request.data
@@ -1584,14 +1715,58 @@ def return_book(request):
     if not record_id:
         return Response({"detail": "Thiếu recordId"}, status=status.HTTP_400_BAD_REQUEST)
     try:
-        record = BorrowRecord.objects.get(pk=record_id)
+        record = BorrowRecord.objects.select_related("book", "member").get(pk=record_id)
     except BorrowRecord.DoesNotExist:
         return Response({"detail": "Phiếu mượn không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
     from datetime import date
     record.return_date = date.today()
-    record.save(update_fields=["return_date"])
+    raw_notes = (data.get("returnNotes") or data.get("return_notes") or "").strip()[:2000]
+    record.return_notes = raw_notes
+    record.save(update_fields=["return_date", "return_notes"])
     record.book.is_borrowed = False
     record.book.save(update_fields=["is_borrowed"])
+
+    # #region agent log
+    import json
+    _log_path = "debug-fd8ec8.log"
+    try:
+        with open(_log_path, "a", encoding="utf-8") as _f:
+            _f.write(json.dumps({"sessionId": "fd8ec8", "location": "views.py:return_book", "message": "After save", "data": {"returnNotes_key": "returnNotes" in data, "return_notes_key": "return_notes" in data, "raw_notes_len": len(raw_notes), "record_return_notes_len": len(record.return_notes or ""), "will_create_notif": bool(record.return_notes)}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H2"}) + "\n")
+    except Exception:
+        pass
+    # #endregion
+
+    # Tự động gửi thông báo tới Ban QLS khi có ghi chú trả sách (do tài khoản xác nhận trả đăng)
+    if record.return_notes:
+        sender_label = caller.full_name or caller.email or _ROLE_DISPLAY.get((caller.club_permission or "user").strip().lower(), "Tài khoản xác nhận trả")
+        book = record.book
+        member = record.member
+        title = f"Ghi chú trả sách: {book.title}"
+        summary_parts = [
+            f"Ghi chú: {record.return_notes}",
+            "",
+            f"Sách: {book.title}" + (f" - {book.author}" if book.author else ""),
+            f"Mã sách: {book.id}",
+            f"Người trả: {member.name}",
+            f"Ngày trả: {record.return_date.strftime('%d/%m/%Y')}",
+        ]
+        notif = Notification.objects.create(
+            title=title,
+            summary="\n".join(summary_parts),
+            audience="Ban Quản lý Sách",
+            status="sent",
+            type="internal",
+            urgency="normal",
+            sender_label=sender_label,
+        )
+        # #region agent log
+        try:
+            with open(_log_path, "a", encoding="utf-8") as _f:
+                _f.write(json.dumps({"sessionId": "fd8ec8", "location": "views.py:return_book", "message": "Notification created", "data": {"notif_id": notif.id, "audience": notif.audience, "caller_perm": (caller.club_permission or "").strip().lower()}, "timestamp": __import__("time").time() * 1000, "hypothesisId": "H3"}) + "\n")
+        except Exception:
+            pass
+        # #endregion
+
     return Response({"ok": True})
 
 

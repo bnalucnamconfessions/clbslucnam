@@ -11,6 +11,7 @@ interface BookItem {
   id: string
   title: string
   author: string
+  genre?: string
   isBorrowed: boolean
 }
 
@@ -19,15 +20,25 @@ interface MemberItem {
   name: string
   userId: string
   department?: string
+  role?: string
+  avatarUrl?: string
 }
 
 interface BookInCart {
   id: string
   title: string
   author: string
+  genre?: string
   bookId: string
   status: string
-  coverImage: string
+}
+
+interface BorrowRecordItem {
+  id: number
+  memberId: string
+  bookId: number
+  borrowDate: string
+  dueDate: string
 }
 
 export default function MuonPage() {
@@ -43,6 +54,7 @@ export default function MuonPage() {
   })
   const [bookInput, setBookInput] = useState('')
   const [books, setBooks] = useState<BookInCart[]>([])
+  const [borrows, setBorrows] = useState<BorrowRecordItem[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,9 +63,10 @@ export default function MuonPage() {
     try {
       setLoading(true)
       const { headers } = getApiAuth()
-      const [booksRes, membersRes] = await Promise.all([
+      const [booksRes, membersRes, borrowsRes] = await Promise.all([
         fetch(apiUrlWithAuth('/api/books'), { headers }),
         fetch(apiUrlWithAuth('/api/members'), { headers }),
+        fetch(apiUrlWithAuth('/api/borrow'), { headers }),
       ])
       if (booksRes.ok) {
         const data = await booksRes.json()
@@ -62,6 +75,10 @@ export default function MuonPage() {
       if (membersRes.ok) {
         const data = await membersRes.json()
         setMembers(data)
+      }
+      if (borrowsRes.ok) {
+        const data = await borrowsRes.json()
+        setBorrows(Array.isArray(data) ? data : [])
       }
     } catch {
       setError('Không tải được dữ liệu')
@@ -77,8 +94,21 @@ export default function MuonPage() {
   useRefetchOnFocusAndInterval(fetchData, { intervalMs: 20 * 1000 })
 
   const selectedMember = inputMode === 'qr'
-    ? members.find(m => m.userId === memberId.trim())
+    ? (() => {
+        const t = memberId.trim()
+        return members.find(m => m.userId === t) || (t && members.find(m => String(m.id) === t))
+      })()
     : members.find(m => String(m.id) === manualMemberId)
+
+  const memberBorrows = selectedMember
+    ? borrows.filter(b => String(b.memberId) === String(selectedMember.id))
+    : []
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const memberStats = {
+    currentBorrowing: memberBorrows.length,
+    overdue: memberBorrows.filter(b => b.dueDate && b.dueDate < todayStr).length,
+    maxBorrow: 3,
+  }
 
   const handleAddBook = () => {
     const id = bookInput.trim()
@@ -89,9 +119,9 @@ export default function MuonPage() {
         id: found.id,
         title: found.title,
         author: found.author,
+        genre: found.genre,
         bookId: found.id,
         status: 'Mượn mới',
-        coverImage: 'https://via.placeholder.com/40x56'
       }])
       setBookInput('')
     }
@@ -122,7 +152,7 @@ export default function MuonPage() {
         const res = await fetch(apiUrl('/api/borrow/create'), {
           method: 'POST',
           headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookId: Number(book.id), memberId: Number(selectedMember.id), accountEmail: accountEmail || undefined }),
+          body: JSON.stringify({ bookId: Number(book.id), memberId: selectedMember.id, accountEmail: accountEmail || undefined }),
         })
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
@@ -134,6 +164,7 @@ export default function MuonPage() {
       alert('Xác nhận mượn sách thành công!')
       setBooks([])
       setBookInput('')
+      fetchData()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Lỗi kết nối')
     } finally {
@@ -142,8 +173,11 @@ export default function MuonPage() {
   }
 
   const isLimitReached = books.length >= 3
-  const borrowDate = '14/10/2023'
-  const returnDate = '28/10/2023'
+  const today = new Date()
+  const dueDate = new Date(today)
+  dueDate.setDate(dueDate.getDate() + 14)
+  const borrowDate = today.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const returnDate = dueDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
   return (
     <RequireAuth>
@@ -281,34 +315,33 @@ export default function MuonPage() {
                     </div>
                     <div className="p-5 flex flex-col items-center text-center pt-8">
                       <div className="relative mb-4">
-                        <div className="size-24 rounded-full p-1 bg-gradient-to-tr from-primary to-blue-300">
-                          <div 
-                            className="size-full rounded-full bg-slate-200 bg-center bg-cover border-4 border-white"
-                            style={{
-                              backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuCj9U70a_pSB-PDGn1hROw_7HrprwPJMUNkHqBp-dgdrKZdayHZ94qIM3W1bBV2jIyi7_YQdUxJtLgBlelETw7WZnMD7y0csfq2dcbLkrJoPNY4gtLpxrNbJc_c-ydWzagphVznsinU-LZvGNPfAbwRhKftLhDGzZk0iUR7TqcITOFniOrGgOYOepmv39bFPLv7v4HVDL0E9pU4ABRtq1I03dJMPZOi-caqNt6VfPa-WbxACL4g3JVoga0syBTeLYpMjrrGtbI-aZGG")'
-                            }}
-                          ></div>
+                        <div className="size-24 rounded-full p-1 bg-gradient-to-tr from-primary to-blue-300 overflow-hidden flex items-center justify-center bg-[#137fec] text-white text-2xl font-bold border-4 border-white">
+                          {selectedMember.avatarUrl ? (
+                            <div className="size-full rounded-full bg-cover bg-center border-0" style={{ backgroundImage: `url("${selectedMember.avatarUrl}")` }} />
+                          ) : (
+                            <span className="w-full h-full flex items-center justify-center">{selectedMember.name ? selectedMember.name.charAt(0).toUpperCase() : ''}</span>
+                          )}
                         </div>
                       </div>
                       <h3 className="text-slate-900 text-lg font-bold">{selectedMember.name}</h3>
                       <p className="text-slate-500 text-sm mb-1">ID: <span className="font-mono text-slate-700">{selectedMember.userId}</span></p>
-                      <p className="text-slate-500 text-sm">Ban: <span className="font-medium text-slate-700">{selectedMember.department || '-'}</span></p>
+                      <p className="text-slate-500 text-sm">Phân quyền: <span className="font-medium text-slate-700">{selectedMember.department || selectedMember.role || '-'}</span></p>
                       <div className="grid grid-cols-4 gap-2 w-full mt-6 border-t border-slate-200 pt-4">
                         <div className="flex flex-col">
                           <span className="text-xs text-slate-500">Đang mượn</span>
-                          <span className="text-lg font-bold text-slate-700">0</span>
+                          <span className="text-lg font-bold text-slate-700">{memberStats.currentBorrowing}</span>
                         </div>
                         <div className="flex flex-col border-l border-slate-200">
                           <span className="text-xs text-slate-500">Quá hạn</span>
-                          <span className="text-lg font-bold text-red-500">0</span>
+                          <span className="text-lg font-bold text-red-500">{memberStats.overdue}</span>
                         </div>
                         <div className="flex flex-col border-l border-slate-200">
                           <span className="text-xs text-slate-500">Tối đa</span>
-                          <span className="text-lg font-bold text-primary">3</span>
+                          <span className="text-lg font-bold text-primary">{memberStats.maxBorrow}</span>
                         </div>
                         <div className="flex flex-col border-l border-slate-200">
                           <span className="text-xs text-slate-500">Tổng</span>
-                          <span className="text-lg font-bold text-slate-700">0</span>
+                          <span className="text-lg font-bold text-slate-700">{memberStats.currentBorrowing}</span>
                         </div>
                       </div>
                     </div>
@@ -331,7 +364,7 @@ export default function MuonPage() {
                     <input
                       autoFocus
                       className="block w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                      placeholder="Quét mã vạch sách (ISBN/BookID)..."
+                      placeholder="Quét mã QR sách"
                       type="text"
                       value={bookInput}
                       onChange={(e) => setBookInput(e.target.value)}
@@ -378,9 +411,10 @@ export default function MuonPage() {
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
-                          <th className="p-4 font-medium w-16">#</th>
-                          <th className="p-4 font-medium">Thông tin sách</th>
+                          <th className="p-4 font-medium w-16">STT</th>
                           <th className="p-4 font-medium w-32">Mã sách</th>
+                          <th className="p-4 font-medium">Thông tin sách</th>
+                          <th className="p-4 font-medium w-32">Thể loại</th>
                           <th className="p-4 font-medium w-32">Trạng thái</th>
                           <th className="p-4 font-medium w-16 text-right">Hủy</th>
                         </tr>
@@ -388,7 +422,7 @@ export default function MuonPage() {
                       <tbody className="text-sm divide-y divide-slate-100">
                         {books.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="p-8 text-center text-slate-400">
+                            <td colSpan={6} className="p-8 text-center text-slate-400">
                               Chưa có sách nào được thêm vào danh sách
                             </td>
                           </tr>
@@ -396,19 +430,14 @@ export default function MuonPage() {
                           books.map((book, index) => (
                             <tr key={book.id} className="group hover:bg-slate-50 transition-colors">
                               <td className="p-4 text-slate-400">{index + 1}</td>
+                              <td className="p-4 font-mono text-slate-600">{book.bookId}</td>
                               <td className="p-4">
-                                <div className="flex gap-3">
-                                  <div
-                                    className="w-10 h-14 bg-slate-200 rounded bg-cover bg-center shrink-0 shadow-sm"
-                                    style={{ backgroundImage: `url("${book.coverImage}")` }}
-                                  ></div>
-                                  <div className="flex flex-col justify-center">
-                                    <span className="text-slate-900 font-medium line-clamp-1">{book.title}</span>
-                                    <span className="text-slate-500 text-xs">{book.author}</span>
-                                  </div>
+                                <div className="flex flex-col justify-center min-w-0">
+                                  <span className="text-slate-900 font-medium line-clamp-1">{book.title}</span>
+                                  <span className="text-slate-500 text-xs">{book.author}</span>
                                 </div>
                               </td>
-                              <td className="p-4 font-mono text-slate-600">{book.bookId}</td>
+                              <td className="p-4 text-slate-600">{book.genre || '-'}</td>
                               <td className="p-4">
                                 <span className="inline-flex items-center px-2 py-1 rounded bg-blue-100 text-blue-700 text-xs font-medium">
                                   {book.status}

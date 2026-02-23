@@ -476,11 +476,11 @@ export default function ThanhVienPage() {
       setEditingMember(null)
       setFormMember({ name: '', userId: '', permission: 'user', department: '', role: '', status: 'active', joinDate: '' })
       fetchMembers()
-      // Nếu thành viên vừa sửa là tài khoản đang đăng nhập (userId = acc-X) thì cập nhật localStorage để Sidebar đổi menu ngay
-      const uid = (editingMember.userId || '').trim()
-      if (uid.startsWith('acc-')) {
+      // Nếu thành viên vừa sửa là tài khoản đang đăng nhập (userId = id số tài khoản) thì cập nhật localStorage để Sidebar đổi menu ngay
+      const uid = (editingMember.userId || '').trim().replace(/^acc-/, '')
+      const accId = /^\d+$/.test(uid) ? parseInt(uid, 10) : NaN
+      if (!Number.isNaN(accId)) {
         try {
-          const accId = parseInt(uid.slice(4), 10)
           const { headers: authHeaders } = getApiAuth()
           const accountsRes = await fetch(apiUrlWithAuth('/api/accounts'), { headers: authHeaders })
           if (accountsRes.ok) {
@@ -998,7 +998,7 @@ export default function ThanhVienPage() {
                               )}
                               <div>
                                 <div className="font-semibold text-slate-900">{member.name}</div>
-                                <div className="text-xs text-slate-500">ID: {member.userId?.startsWith('acc-') ? member.userId.slice(4) : member.userId}</div>
+                                <div className="text-xs text-slate-500">ID: {member.userId ?? ''}</div>
                               </div>
                             </div>
                           </td>
@@ -1163,12 +1163,8 @@ export default function ThanhVienPage() {
                   <label className="block text-sm font-semibold text-slate-700 mb-1">Mã thành viên (ID) <span className="text-red-500">*</span></label>
                   <input
                     type="text"
-                    value={formMember.userId?.startsWith('acc-') ? formMember.userId.slice(4) : (formMember.userId ?? '')}
-                    onChange={e => {
-                      const v = e.target.value.trim().replace(/^acc-/, '')
-                      const newUserId = editingMember?.userId?.startsWith('acc-') ? `acc-${v}` : v
-                      setFormMember(p => ({ ...p, userId: newUserId }))
-                    }}
+                    value={formMember.userId ?? ''}
+                    onChange={e => setFormMember(p => ({ ...p, userId: e.target.value.trim().replace(/^acc-/, '') }))}
                     placeholder="VD: M001"
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#137fec]/20 focus:border-[#137fec]"
                     required

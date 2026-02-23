@@ -69,6 +69,21 @@ function getNotificationIcon(title: string): { icon: string; bg: string; text: s
   return { icon: 'campaign', bg: 'bg-blue-100', text: 'text-blue-600' }
 }
 
+/** Nhãn hiển thị thay cho "Người gửi" theo ngữ cảnh thông báo. */
+function getSenderLabelForNotification(title: string): string {
+  const t = (title || '').toLowerCase()
+  if (t.includes('trả sách') || t.includes('ghi chú trả')) return 'Người ghi trả sách'
+  if (t.includes('mượn') || t.includes('xác nhận mượn') || t.includes('phê duyệt mượn')) return 'Người ghi mượn sách'
+  return 'Người gửi'
+}
+
+/** Lấy tên người mượn/người trả từ summary thông báo trả sách (dòng "Người trả: ..."). */
+function getBorrowerNameFromSummary(summary: string): string | null {
+  if (!summary?.trim()) return null
+  const m = summary.match(/Người trả:\s*([^\n]+)/)
+  return m ? m[1].trim() : null
+}
+
 /** Mức độ thông báo (suy từ tiêu đề nếu backend chưa có trường). */
 type UrgencyLevel = 'urgent' | 'important' | 'normal'
 const URGENCY_STYLES: Record<UrgencyLevel, { label: string; border: string; badge: string }> = {
@@ -727,13 +742,21 @@ export default function ThongBaoPage() {
                           <div>
                             <h2 className="text-xl font-bold text-slate-900 leading-tight">{detailModal.title}</h2>
                             <div className="flex items-center gap-3 mt-1 flex-wrap">
-                              <span className="text-sm text-slate-500">Người gửi: <strong>{detailModal.senderLabel || getSenderLabel(currentUserPermission)}</strong></span>
+                              {(detailModal.title || '').toLowerCase().includes('trả sách') && getBorrowerNameFromSummary(detailModal.summary || '') && (
+                                <>
+                                  <span className="text-sm text-slate-500">Người ghi mượn sách: <strong>{getBorrowerNameFromSummary(detailModal.summary || '')}</strong></span>
+                                  <span className="size-1 rounded-full bg-slate-200" />
+                                </>
+                              )}
+                              <span className="text-sm text-slate-500">{getSenderLabelForNotification(detailModal.title)}: <strong>{detailModal.senderLabel || getSenderLabel(currentUserPermission)}</strong></span>
                               <span className="size-1 rounded-full bg-slate-200" />
                               <span className="text-sm text-slate-500">{detailModal.scheduledDate}</span>
                             </div>
                           </div>
                         </div>
-                        <div className="prose prose-sm max-w-none text-slate-900 leading-relaxed space-y-4 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-1" dangerouslySetInnerHTML={{ __html: detailModal.summary || '' }} />
+                        <div className="prose prose-sm max-w-none text-slate-900 leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-1 whitespace-pre-line text-[15px] leading-7">
+                          {(detailModal.summary || '').replace(/Người mượn:/g, 'Tài khoản người dùng:')}
+                        </div>
                       </div>
                       <div className="px-8 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
                         {readIds.has(Number(detailModal.id)) ? (

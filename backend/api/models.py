@@ -209,6 +209,7 @@ class BorrowRecord(models.Model):
     borrow_date = models.DateField()
     due_date = models.DateField()
     return_date = models.DateField(null=True, blank=True)
+    return_notes = models.TextField(blank=True, help_text="Ghi chú tình trạng sách khi trả (hư hỏng, v.v.)")
 
     class Meta:
         db_table = "borrow_records"

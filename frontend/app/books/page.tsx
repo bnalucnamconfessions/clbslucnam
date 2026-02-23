@@ -217,7 +217,7 @@ export default function BooksPage() {
             <div className="flex items-end gap-3">
               <p className="text-slate-900 text-3xl font-bold leading-tight">{loading ? '...' : totalBooks}</p>
               <p className="text-emerald-600 text-sm font-medium mb-1 flex items-center gap-0.5 bg-emerald-50 px-1.5 py-0.5 rounded">
-                <span className="material-symbols-outlined text-[16px]">trending_up</span> dau sach
+                <span className="material-symbols-outlined text-[16px]">trending_up</span> đầu sách
               </p>
             </div>
           </div>
@@ -231,7 +231,7 @@ export default function BooksPage() {
             <div className="flex items-end gap-3">
               <p className="text-slate-900 text-3xl font-bold leading-tight">{loading ? '...' : availableCount}</p>
               <p className="text-emerald-600 text-sm font-medium mb-1 flex items-center gap-0.5 bg-emerald-50 px-1.5 py-0.5 rounded">
-                <span className="material-symbols-outlined text-[16px]">check_circle</span> chua muon
+                <span className="material-symbols-outlined text-[16px]">check_circle</span> chưa mượn
               </p>
             </div>
           </div>

@@ -12,7 +12,7 @@ interface BorrowRecord {
   id: number
   bookId: number
   bookTitle: string
-  memberId: number
+  memberId: string
   memberName: string
   borrowDate: string
   dueDate: string
@@ -22,15 +22,13 @@ interface Book {
   id: string
   title: string
   author: string
+  genre?: string
   bookId: string
-  coverImage: string
 }
 
 interface LoanInfo {
   memberName: string
   memberId: string
-  className: string
-  memberAvatar: string
   borrowDate: string
   dueDate: string
   returnDate: string
@@ -39,8 +37,17 @@ interface LoanInfo {
   daysAgo: number
 }
 
+interface MemberItem {
+  id: string
+  name: string
+  userId: string
+  avatarUrl?: string
+}
+
 export default function TraPage() {
   const [borrows, setBorrows] = useState<BorrowRecord[]>([])
+  const [members, setMembers] = useState<MemberItem[]>([])
+  const [books, setBooks] = useState<Book[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -53,10 +60,22 @@ export default function TraPage() {
   const fetchBorrows = async () => {
     try {
       const { headers } = getApiAuth()
-      const res = await fetch(apiUrlWithAuth('/api/borrow'), { headers })
-      if (res.ok) {
-        const data = await res.json()
-        setBorrows(data)
+      const [borrowsRes, membersRes, booksRes] = await Promise.all([
+        fetch(apiUrlWithAuth('/api/borrow'), { headers }),
+        fetch(apiUrlWithAuth('/api/members'), { headers }),
+        fetch(apiUrlWithAuth('/api/books'), { headers }),
+      ])
+      if (borrowsRes.ok) {
+        const data = await borrowsRes.json()
+        setBorrows(Array.isArray(data) ? data : [])
+      }
+      if (membersRes.ok) {
+        const data = await membersRes.json()
+        setMembers(Array.isArray(data) ? data : [])
+      }
+      if (booksRes.ok) {
+        const data = await booksRes.json()
+        setBooks(Array.isArray(data) ? data : [])
       }
     } catch {
       setError('Không tải được danh sách mượn')
@@ -90,12 +109,13 @@ export default function TraPage() {
       const record = borrows.find(b => b.bookId === id)
       if (record) {
         setSelectedRecord(record)
+        const fullBook = books.find((b: Book) => String(b.id) === String(record.bookId))
         setScannedBook({
           id: String(record.bookId),
           title: record.bookTitle,
-          author: '',
+          author: fullBook?.author ?? '',
+          genre: fullBook?.genre,
           bookId: String(record.bookId),
-          coverImage: 'https://via.placeholder.com/40x56'
         })
         const due = new Date(record.dueDate)
         const today = new Date()
@@ -105,8 +125,6 @@ export default function TraPage() {
         setLoanInfo({
           memberName: record.memberName,
           memberId: String(record.memberId),
-          className: '-',
-          memberAvatar: '',
           borrowDate: formatDate(record.borrowDate),
           dueDate: formatDate(record.dueDate),
           returnDate: formatDate(new Date().toISOString()),
@@ -135,16 +153,20 @@ export default function TraPage() {
     setError(null)
     try {
       const { headers, accountEmail } = getApiAuth()
+      const payload = { recordId: selectedRecord.id, returnNotes: returnNotes || undefined, accountEmail: accountEmail || undefined }
+      // #region agent log
+      fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'fd8ec8' }, body: JSON.stringify({ sessionId: 'fd8ec8', location: 'tra/page.tsx:handleConfirm', message: 'Payload before return API', data: { returnNotesLength: (returnNotes || '').length, returnNotesValue: (returnNotes || '').slice(0, 80), hasRecordId: !!payload.recordId }, timestamp: Date.now(), hypothesisId: 'H1' }) }).catch(() => {})
+      // #endregion
       const res = await fetch(apiUrl('/api/return'), {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recordId: selectedRecord.id, accountEmail: accountEmail || undefined }),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || 'Lỗi trả sách')
       }
-      logActivity('Trả sách', selectedRecord ? `Sách: ${selectedRecord.bookTitle} | Thành viên: ${selectedRecord.memberName} | Hạn trả: ${selectedRecord.dueDate}` : '')
+      logActivity('Trả sách', selectedRecord ? `Sách: ${selectedRecord.bookTitle} | Thành viên: ${selectedRecord.memberName} | Hạn trả: ${selectedRecord.dueDate}${returnNotes ? ` | Ghi chú: ${returnNotes}` : ''}` : '')
       alert('Xác nhận trả sách thành công!')
       setScannedBookId('')
       setScannedBook(null)
@@ -235,18 +257,13 @@ export default function TraPage() {
                     </div>
                   </div>
                     {scannedBook && (
-                      <div className="border-t border-slate-100 mt-2">
-                        <p className="text-xs font-semibold text-slate-400 uppercase mb-3">Kết quả tìm kiếm</p>
-                        <div className="flex gap-4 p-3 bg-blue-50/50 rounded-lg border border-blue-100">
-                          <div 
-                            className="w-16 h-24 bg-slate-200 rounded bg-cover bg-center shrink-0 shadow-sm"
-                            style={{ backgroundImage: `url("${scannedBook.coverImage}")` }}
-                          ></div>
-                          <div className="flex flex-col justify-center">
-                            <h4 className="text-slate-900 font-bold text-base line-clamp-2">{scannedBook.title}</h4>
-                            <p className="text-slate-500 text-sm mb-1">{scannedBook.author}</p>
-                            <span className="inline-flex w-fit items-center px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-600 text-[11px] font-mono">ID: {scannedBook.bookId}</span>
-                          </div>
+                      <div className="border-t border-slate-100 mt-2 pt-3">
+                        <p className="text-xs font-semibold text-slate-500 mb-2">Thông tin sách</p>
+                        <div className="text-sm text-slate-700 space-y-1">
+                          <p><span className="text-slate-500">Tên:</span> {scannedBook.title}</p>
+                          {scannedBook.author && <p><span className="text-slate-500">Tác giả:</span> {scannedBook.author}</p>}
+                          {scannedBook.genre && <p><span className="text-slate-500">Thể loại:</span> {scannedBook.genre}</p>}
+                          <p><span className="text-slate-500">Mã sách:</span> <span className="font-mono">{scannedBook.bookId}</span></p>
                         </div>
                       </div>
                   )}
@@ -263,19 +280,18 @@ export default function TraPage() {
                   {loanInfo ? (
                     <>
                       <div className="p-6 border-b border-slate-100 flex items-center gap-4 flex-wrap sm:flex-nowrap">
-                        <div className="size-16 rounded-full bg-gradient-to-tr from-primary to-blue-300 p-0.5 shrink-0">
-                          <div 
-                            className="size-full rounded-full bg-cover bg-center border-2 border-white"
-                            style={{ backgroundImage: `url("${loanInfo.memberAvatar}")` }}
-                          ></div>
+                        <div className="size-16 rounded-full bg-gradient-to-tr from-primary to-blue-300 p-0.5 shrink-0 overflow-hidden flex items-center justify-center bg-[#137fec] text-white text-2xl font-bold border-2 border-white">
+                          {(() => {
+                            const member = members.find(x => String(x.id) === String(loanInfo.memberId))
+                            if (member?.avatarUrl) {
+                              return <div className="size-full rounded-full bg-cover bg-center border-0" style={{ backgroundImage: `url("${member.avatarUrl}")` }} />
+                            }
+                            return <span className="w-full h-full flex items-center justify-center">{loanInfo.memberName ? loanInfo.memberName.charAt(0).toUpperCase() : ''}</span>
+                          })()}
                         </div>
                         <div className="flex flex-col mr-auto">
                           <h3 className="text-xl font-bold text-slate-900">{loanInfo.memberName}</h3>
                           <div className="flex items-center gap-3 text-sm text-slate-500">
-                            <span className="flex items-center gap-1">
-                              <span className="material-symbols-outlined text-[16px]">school</span> Lớp <b className="text-slate-700">{loanInfo.className}</b>
-                            </span>
-                            <span className="w-1 h-1 rounded-full bg-slate-300"></span>
                             <span className="font-mono">ID: {loanInfo.memberId}</span>
                           </div>
                         </div>

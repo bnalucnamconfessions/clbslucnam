@@ -47,6 +47,12 @@ type OverdueBook = {
   daysOverdue: number
 }
 
+type TrendPoint = {
+  label: string
+  borrowCount: number
+  returnCount: number
+}
+
 function formatVND(n: number): string {
   return new Intl.NumberFormat('vi-VN').format(n)
 }
@@ -58,6 +64,8 @@ export default function DashboardPage() {
   const [notificationCount, setNotificationCount] = useState(0)
   const [topReaders, setTopReaders] = useState<TopReader[]>([])
   const [overdue, setOverdue] = useState<OverdueBook[]>([])
+  const [chartPeriod, setChartPeriod] = useState<'day' | 'month' | 'year'>('day')
+  const [trendData, setTrendData] = useState<TrendPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -116,6 +124,25 @@ export default function DashboardPage() {
     fetchDashboard()
   }, [fetchDashboard])
 
+  const fetchTrend = useCallback(async (period: 'day' | 'month' | 'year') => {
+    try {
+      const { headers } = getApiAuth()
+      const res = await fetch(apiUrlWithAuth(`/api/dashboard/borrow-trend?period=${period}`), { headers })
+      if (res.ok) {
+        const data = await res.json()
+        setTrendData(Array.isArray(data) ? data : [])
+      } else {
+        setTrendData([])
+      }
+    } catch {
+      setTrendData([])
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchTrend(chartPeriod)
+  }, [chartPeriod, fetchTrend])
+
   // Cập nhật khi quay lại tab hoặc mỗi 60 giây (giống các trang mạng realtime)
   useRefetchOnFocusAndInterval(fetchDashboard, { intervalMs: 20 * 1000 })
 
@@ -124,6 +151,39 @@ export default function DashboardPage() {
     'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12']
   const currentMonth = monthNames[currentDate.getMonth()]
   const currentYear = currentDate.getFullYear()
+
+  const handleExportReport = useCallback(() => {
+    const rows: string[] = []
+    const csv = (arr: string[]) => rows.push(arr.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    csv(['Báo cáo tổng quan', `${currentMonth}, ${currentYear}`])
+    rows.push('')
+    csv(['Chỉ số', 'Giá trị'])
+    if (stats) {
+      csv(['Mượn hôm nay', String(stats.borrowToday)])
+      csv(['Mượn tháng này', String(stats.borrowMonth)])
+      csv(['Sách quá hạn', String(stats.overdueCount)])
+      csv(['Thành viên đang hoạt động', String(stats.activeMembers)])
+    }
+    rows.push('')
+    csv(['Độc giả tích cực (Top mượn sách)'])
+    csv(['Hạng', 'Tên', 'Số sách'])
+    topReaders.forEach(r => csv([String(r.rank), r.name, String(r.bookCount)]))
+    rows.push('')
+    csv(['Sách quá hạn chưa trả'])
+    csv(['Tên sách', 'Người mượn', 'Hạn trả', 'Số ngày quá hạn'])
+    overdue.forEach(o => csv([o.bookTitle, o.memberName, o.dueDate || '', String(o.daysOverdue)]))
+    rows.push('')
+    csv(['Xu hướng mượn/trả', chartPeriod === 'day' ? 'Theo ngày' : chartPeriod === 'month' ? 'Theo tháng' : 'Theo năm'])
+    csv(['Kỳ', 'Mượn', 'Trả'])
+    trendData.forEach(p => csv([p.label, String(p.borrowCount), String(p.returnCount)]))
+    const blob = new Blob(['\uFEFF' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `bao-cao-tong-quan-${currentYear}-${String(currentDate.getMonth() + 1).padStart(2, '0')}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [stats, topReaders, overdue, trendData, chartPeriod, currentMonth, currentYear])
 
   return (
     <>
@@ -149,6 +209,8 @@ export default function DashboardPage() {
                 <span className="text-slate-700 text-sm font-medium">{currentMonth}, {currentYear}</span>
               </div>
               <button 
+                type="button"
+                onClick={handleExportReport}
                 className="group flex items-center justify-center rounded-lg h-10 px-4 bg-[#137fec] text-white text-sm font-bold leading-normal transition-all duration-200 shadow-lg shadow-blue-500/20 hover:bg-white hover:text-[#137fec] hover:shadow-xl hover:shadow-blue-500/30 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 active:bg-slate-50"
               >
                 <span className="material-symbols-outlined text-[20px] mr-2 group-hover:text-[#137fec] transition-colors">download</span>
@@ -175,16 +237,19 @@ export default function DashboardPage() {
               {/* Mượn hôm nay */}
               <div className="flex flex-col gap-2 rounded-xl p-6 border border-slate-200 bg-white hover:border-primary/50 transition-colors group shadow-sm">
                 <div className="flex items-center justify-between">
-                  <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-primary transition-colors">
-                    Mượn hôm nay
-                  </p>
-                  <span className="material-symbols-outlined text-primary bg-primary/10 p-1.5 rounded-lg">today</span>
+                  <div>
+                    <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-primary transition-colors">
+                      Mượn hôm nay
+                    </p>
+                    <p className="text-slate-400 text-xs mt-0.5">Phiếu mượn trong ngày</p>
+                  </div>
+                  <span className="material-symbols-outlined text-primary bg-primary/10 p-1.5 rounded-lg" aria-hidden>today</span>
                 </div>
                 <div className="flex items-end gap-2">
                   <p className="text-slate-900 text-3xl font-bold leading-tight">{stats?.borrowToday ?? 0}</p>
-                  <p className="text-green-600 text-sm font-medium mb-1 flex items-center">
-                    <span className="material-symbols-outlined text-[16px]">trending_up</span>
-                    +{stats?.borrowTodayChange ?? 0}%
+                  <p className="text-green-600 text-sm font-medium mb-1 flex items-center gap-0.5">
+                    <span className="material-symbols-outlined text-[16px]" aria-hidden>trending_up</span>
+                    {(stats?.borrowTodayChange ?? 0) === 0 ? '0%' : `+${stats?.borrowTodayChange}%`}
                   </p>
                 </div>
               </div>
@@ -192,16 +257,19 @@ export default function DashboardPage() {
               {/* Mượn tháng này */}
               <div className="flex flex-col gap-2 rounded-xl p-6 border border-slate-200 bg-white hover:border-primary/50 transition-colors group shadow-sm">
                 <div className="flex items-center justify-between">
-                  <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-primary transition-colors">
-                    Mượn tháng này
-                  </p>
-                  <span className="material-symbols-outlined text-primary bg-primary/10 p-1.5 rounded-lg">calendar_view_month</span>
+                  <div>
+                    <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-primary transition-colors">
+                      Mượn tháng này
+                    </p>
+                    <p className="text-slate-400 text-xs mt-0.5">Phiếu mượn trong tháng</p>
+                  </div>
+                  <span className="material-symbols-outlined text-primary bg-primary/10 p-1.5 rounded-lg" aria-hidden>calendar_view_month</span>
                 </div>
                 <div className="flex items-end gap-2">
                   <p className="text-slate-900 text-3xl font-bold leading-tight">{stats?.borrowMonth ?? 0}</p>
-                  <p className="text-green-600 text-sm font-medium mb-1 flex items-center">
-                    <span className="material-symbols-outlined text-[16px]">trending_up</span>
-                    +{stats?.borrowMonthChange ?? 0}%
+                  <p className="text-green-600 text-sm font-medium mb-1 flex items-center gap-0.5">
+                    <span className="material-symbols-outlined text-[16px]" aria-hidden>trending_up</span>
+                    {(stats?.borrowMonthChange ?? 0) === 0 ? '0%' : `+${stats?.borrowMonthChange}%`}
                   </p>
                 </div>
               </div>
@@ -213,7 +281,7 @@ export default function DashboardPage() {
                   <p className="text-red-600 text-sm font-medium leading-normal group-hover:text-red-500 transition-colors">
                     Sách quá hạn
                   </p>
-                  <span className="material-symbols-outlined text-red-500 bg-red-500/10 p-1.5 rounded-lg">warning</span>
+                  <span className="material-symbols-outlined text-red-500 bg-red-500/10 p-1.5 rounded-lg" aria-hidden>warning</span>
                 </div>
                 <div className="flex items-end gap-2 relative z-10">
                   <p className="text-slate-900 text-3xl font-bold leading-tight">{stats?.overdueCount ?? 0}</p>
@@ -349,16 +417,73 @@ export default function DashboardPage() {
             <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Chart - placeholder khi chưa có dữ liệu */}
               <div className="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-6 flex flex-col gap-4 shadow-sm">
-                <div>
-                  <h3 className="text-slate-900 text-lg font-bold leading-normal">Xu hướng Mượn & Trả Sách</h3>
-                  <p className="text-slate-500 text-sm">Thống kê theo tuần trong tháng</p>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <h3 className="text-slate-900 text-lg font-bold leading-normal">Xu hướng Mượn & Trả Sách</h3>
+                    <p className="text-slate-500 text-sm mt-0.5">
+                      {chartPeriod === 'day' && 'Thống kê theo ngày trong tuần'}
+                      {chartPeriod === 'month' && 'Thống kê theo tháng trong năm'}
+                      {chartPeriod === 'year' && 'Thống kê theo năm'}
+                    </p>
+                  </div>
+                  <div className="flex rounded-lg border border-slate-200 p-1 bg-slate-50">
+                    {(['day', 'month', 'year'] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setChartPeriod(p)}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                          chartPeriod === p
+                            ? 'bg-white text-primary shadow-sm border border-slate-200'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {p === 'day' && 'Theo ngày'}
+                        {p === 'month' && 'Theo tháng'}
+                        {p === 'year' && 'Theo năm'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="w-full h-[240px] mt-4 flex items-center justify-center rounded-lg bg-slate-50 border border-slate-200 border-dashed">
-                  <div className="text-center text-slate-400">
-                    <span className="material-symbols-outlined text-5xl mb-2 block">stacked_line_chart</span>
-                    <p className="text-sm font-medium">Chưa có dữ liệu mượn trả</p>
-                    <p className="text-xs mt-1">Dữ liệu sẽ hiển thị khi có phiếu mượn trong tháng</p>
-                  </div>
+                  {trendData.length > 0 ? (
+                    <div className="w-full h-full flex flex-col gap-2 p-4">
+                      <div className="flex items-end justify-around gap-1 flex-1 min-h-0" style={{ height: 180 }}>
+                        {trendData.map((point, i) => {
+                          const maxVal = Math.max(1, ...trendData.flatMap(p => [p.borrowCount, p.returnCount]))
+                          const borrowH = (point.borrowCount / maxVal) * 100
+                          const returnH = (point.returnCount / maxVal) * 100
+                          return (
+                            <div key={i} className="flex flex-col items-center gap-1 flex-1 min-w-0">
+                              <div className="w-full flex items-end justify-center gap-0.5" style={{ height: 140 }}>
+                                <div
+                                  className="w-1/2 max-w-[20px] rounded-t bg-[#137fec] transition-all"
+                                  style={{ height: `${borrowH}%`, minHeight: point.borrowCount > 0 ? 4 : 0 }}
+                                  title={`Mượn: ${point.borrowCount}`}
+                                />
+                                <div
+                                  className="w-1/2 max-w-[20px] rounded-t bg-emerald-500 transition-all"
+                                  style={{ height: `${returnH}%`, minHeight: point.returnCount > 0 ? 4 : 0 }}
+                                  title={`Trả: ${point.returnCount}`}
+                                />
+                              </div>
+                              <span className="text-[10px] font-medium text-slate-500 truncate w-full text-center">{point.label}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="flex justify-center gap-4 text-xs text-slate-500">
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-[#137fec]" /> Mượn</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-emerald-500" /> Trả</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center text-slate-400">
+                      <span className="material-symbols-outlined text-5xl mb-2 block" aria-hidden>stacked_line_chart</span>
+                      <p className="text-sm font-medium">Chưa có dữ liệu</p>
+                      <p className="text-xs mt-1">Biểu đồ sẽ hiển thị khi có phiếu mượn trong tháng</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -372,9 +497,9 @@ export default function DashboardPage() {
                   {topReaders.length === 0 ? (
                     <div className="flex-1 flex items-center justify-center py-8">
                       <div className="text-center text-slate-400">
-                        <span className="material-symbols-outlined text-4xl mb-2 block">emoji_events</span>
+                        <span className="material-symbols-outlined text-4xl mb-2 block" aria-hidden>emoji_events</span>
                         <p className="text-sm font-medium">Chưa có dữ liệu</p>
-                        <p className="text-xs mt-1">Danh sách sẽ cập nhật khi có phiếu mượn</p>
+                        <p className="text-xs mt-1">Danh sách sẽ có khi có phiếu mượn đã trả trong tháng</p>
                       </div>
                     </div>
                   ) : topReaders.map((r) => (
