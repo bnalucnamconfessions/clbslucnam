@@ -1,13 +1,14 @@
 'use client'
 
+import { formatBookId } from '../../lib/bookId'
+
 type BookItem = { id: string; title: string; author: string; genre: string; publisher: string; price: string; isBorrowed: boolean }
 
-const padId = (id: string) => String(id).padStart(12, '0')
-const getQRUrl = (id: string) => `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${padId(id)}`
+const getQRUrl = (id: string) => `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${formatBookId(id)}`
 
 export default function QRCodeTable({ books = [], loading = false, onRefresh }: { books?: BookItem[]; loading?: boolean; onRefresh?: () => void }) {
   const qrCodes = books.map(b => ({
-    id: padId(b.id),
+    id: formatBookId(b.id),
     qrImage: getQRUrl(b.id),
     status: b.title && !b.title.startsWith('Mã QR - Chờ') ? 'linked' : 'pending',
     statusText: b.title && !b.title.startsWith('Mã QR - Chờ') ? 'Đã liên kết' : 'Chờ cập nhật',

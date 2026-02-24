@@ -6,6 +6,8 @@ import RequireAuth from '../components/RequireAuth'
 import DatePickerButton from '../components/DatePickerButton'
 import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
+import { getInitials } from '../../lib/initials'
+import { formatBookId } from '../../lib/bookId'
 
 interface PersonalInfo {
   fullName: string
@@ -80,6 +82,7 @@ export default function HoSoPage() {
     points: 0
   })
   const [clubPermission, setClubPermission] = useState<string>('user')
+  const [accountId, setAccountId] = useState<number | null>(null)
   
   const getProfileKey = (accountEmail: string) => {
     if (!accountEmail) return 'profileInfo'
@@ -112,6 +115,19 @@ export default function HoSoPage() {
     const department = PERM_TO_DEPARTMENT[perm] ?? PERM_TO_DEPARTMENT.user
     // joinDate lấy từ userInfo (đồng bộ từ auth/me — cùng nguồn với cột NGÀY THAM GIA ở Thành viên)
     const joinDate = savedUserInfo.joinDate ?? ''
+    let resolvedAccountId: number | null = savedUserInfo.accountId ?? null
+    if (resolvedAccountId == null && typeof window !== 'undefined') {
+      const token = localStorage.getItem('adminToken')
+      if (token?.startsWith('email-')) {
+        const id = parseInt(token.slice(6), 10)
+        if (!Number.isNaN(id)) resolvedAccountId = id
+      }
+    }
+    if (resolvedAccountId != null) setAccountId(resolvedAccountId)
+    // #region agent log
+    const tokenForLog = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
+    fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8a296a'},body:JSON.stringify({sessionId:'8a296a',location:'ho-so loadUserFromStorage',message:'loadUserFromStorage',data:{fromUserInfo:savedUserInfo.accountId,tokenPrefix:tokenForLog?.slice(0,8)??null,resolvedAccountId},timestamp:Date.now(),hypothesisId:'H1,H2,H3'})}).catch(()=>{});
+    // #endregion
 
     if (savedProfile) {
       // Đã có hồ sơ lưu theo tài khoản → load toàn bộ
@@ -123,7 +139,7 @@ export default function HoSoPage() {
             ...parsed.personalInfo,
             fullName: parsed.personalInfo.fullName || fullName,
             email: parsed.personalInfo.email || email,
-            avatar: parsed.personalInfo.avatar || avatar,
+            avatar: avatar || parsed.personalInfo.avatar,
           }))
         } else {
           setPersonalInfo(prev => ({ ...prev, fullName, email, avatar }))
@@ -170,29 +186,56 @@ export default function HoSoPage() {
   useEffect(() => {
     const syncRoleFromBackend = async () => {
       try {
-        const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
-        const s = localStorage.getItem('userInfo')
+        const s = typeof window !== 'undefined' ? localStorage.getItem('userInfo') : null
         if (!s) return
         const parsed = JSON.parse(s)
-        const email = (parsed.accountEmail || parsed.email || '').trim()
+        const { headers, accountEmail } = getApiAuth()
+        const email = (parsed.accountEmail || parsed.email || accountEmail || '').trim()
+        const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
         if (!token && !email) return
-        const url = email ? apiUrl(`/api/auth/me?email=${encodeURIComponent(email)}`) : apiUrl('/api/auth/me')
-        const headers: HeadersInit = { 'Content-Type': 'application/json' }
-        if (token) headers['Authorization'] = `Bearer ${token}`
-        const res = await fetch(url, { credentials: 'include', headers })
-        if (!res.ok) return
+        const url = email
+          ? apiUrl(`/api/auth/me?email=${encodeURIComponent(email)}`)
+          : apiUrl('/api/auth/me')
+        const res = await fetch(url, { credentials: 'include', headers: { ...headers, 'Content-Type': 'application/json' } })
+        if (!res.ok) {
+          fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8a296a'},body:JSON.stringify({sessionId:'8a296a',location:'ho-so syncRoleFromBackend',message:'auth/me failed',data:{status:res.status},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+          return
+        }
         const data = await res.json()
         const newRole = data.role || parsed.role || 'Người dùng'
         const newPerm = (data.clubPermission || 'user').toLowerCase()
         const newJoinDate = data.joinDate ?? parsed.joinDate ?? ''
-        const updated = { ...parsed, role: newRole, clubPermission: newPerm, fullName: data.fullName || parsed.fullName, joinDate: newJoinDate }
+        const newAvatar = data.avatarUrl ?? parsed.avatar ?? ''
+        const accountId = data.accountId ?? parsed.accountId ?? null
+        const updated = { ...parsed, role: newRole, clubPermission: newPerm, fullName: data.fullName || parsed.fullName, joinDate: newJoinDate, avatar: newAvatar, accountId: accountId ?? parsed.accountId }
+        // #region agent log
+        fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8a296a'},body:JSON.stringify({sessionId:'8a296a',location:'ho-so syncRoleFromBackend',message:'auth/me response',data:{accountIdFromApi:data.accountId,hasAccountId:typeof data.accountId!=='undefined',keys:Object.keys(data)},timestamp:Date.now(),hypothesisId:'H1,H4'})}).catch(()=>{});
+        // #endregion
         localStorage.setItem('userInfo', JSON.stringify(updated))
         localStorage.setItem('adminRole', newRole)
+        if (newAvatar) localStorage.setItem('adminAvatar', newAvatar)
+        const resolvedId = accountId ?? parsed.accountId ?? null
+        if (resolvedId != null) setAccountId(typeof resolvedId === 'number' ? resolvedId : parseInt(String(resolvedId), 10) || null)
         window.dispatchEvent(new Event('userInfoUpdated'))
-      } catch (_) {}
+      } catch (e) {
+        // Nếu auth/me lỗi (CORS, mạng), thử lấy accountId từ token email-<id>
+        try {
+          const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
+          if (token?.startsWith('email-')) {
+            const id = parseInt(token.slice(6), 10)
+            if (!Number.isNaN(id)) setAccountId(id)
+          }
+        } catch (_) {}
+      }
     }
     syncRoleFromBackend()
   }, [])
+
+  useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8a296a'},body:JSON.stringify({sessionId:'8a296a',location:'ho-so accountId state',message:'accountId state',data:{accountId},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+    // #endregion
+  }, [accountId])
 
   const handleInputChange = (field: keyof PersonalInfo, value: string) => {
     setPersonalInfo(prev => ({
@@ -354,7 +397,7 @@ export default function HoSoPage() {
                         />
                       )}
                       <span className="flex items-center justify-center w-full h-full" style={{ display: personalInfo.avatar ? 'none' : 'flex' }}>
-                        {personalInfo.fullName ? personalInfo.fullName.charAt(0).toUpperCase() : ''}
+                        {getInitials(personalInfo.fullName || personalInfo.email || '')}
                       </span>
                     </div>
                     {isEditing && (
@@ -364,13 +407,18 @@ export default function HoSoPage() {
                     )}
                   </div>
                   <div className="flex flex-col">
-                    <div className="flex items-center gap-3">
-                      <h1 className="text-[#0d141b] text-3xl font-bold tracking-tight leading-tight">
-                        {personalInfo.fullName}
-                      </h1>
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-600 shrink-0">
-                        {clubInfo.role}
-                      </span>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-3">
+                        <h1 className="text-[#0d141b] text-3xl font-bold tracking-tight leading-tight">
+                          {personalInfo.fullName}
+                        </h1>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-600 shrink-0">
+                          {clubInfo.role}
+                        </span>
+                      </div>
+                      <p className="text-slate-500 text-sm font-mono mt-0.5">
+                        ID tài khoản: {accountId != null ? formatBookId(accountId) : '—'}
+                      </p>
                     </div>
                     {personalInfo.studentId && <p className="text-[#4c739a] text-base mt-1">ID: {personalInfo.studentId}</p>}
                   </div>
@@ -478,7 +526,7 @@ export default function HoSoPage() {
                             {personalInfo.avatar ? (
                               <img src={personalInfo.avatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                             ) : (
-                              <span className="text-2xl font-bold text-slate-400">{personalInfo.fullName?.charAt(0) || '?'}</span>
+                              <span className="text-2xl font-bold text-slate-400">{getInitials(personalInfo.fullName || personalInfo.email || '')}</span>
                             )}
                           </div>
                           <div className="flex-1 min-w-0 flex flex-col gap-2">
@@ -824,7 +872,7 @@ export default function HoSoPage() {
         )
       })()}
 
-      {/* QR Code Modal */}
+      {/* QR Code Modal - Mã QR ID tài khoản */}
       {showQRModal && (
         <div 
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
@@ -835,7 +883,7 @@ export default function HoSoPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-[#0d141b]">Mã QR Thông Tin Cá Nhân</h3>
+              <h3 className="text-xl font-bold text-[#0d141b]">Mã QR ID tài khoản</h3>
               <button
                 onClick={() => setShowQRModal(false)}
                 className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
@@ -847,14 +895,15 @@ export default function HoSoPage() {
             <div className="flex flex-col items-center gap-4 mb-6">
               <div className="bg-white p-4 rounded-lg border-2 border-slate-200 shadow-sm">
                 <img 
-                  alt="QR Code" 
+                  alt="QR Code ID tài khoản" 
                   className="w-64 h-64 object-contain brightness-100 contrast-100" 
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(personalInfo.studentId || personalInfo.fullName || personalInfo.email || 'profile')}&bgcolor=FFFFFF&color=000000`}
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(accountId != null ? formatBookId(accountId) : '')}&bgcolor=FFFFFF&color=000000`}
                 />
               </div>
               <div className="text-center">
-                <p className="text-sm font-semibold text-slate-500 mb-1">ID Hồ sơ</p>
-                <p className="text-lg font-mono font-bold text-[#0d141b]">{personalInfo.studentId || personalInfo.fullName || personalInfo.email || '—'}</p>
+                <p className="text-sm font-semibold text-slate-500 mb-1">Tên tài khoản</p>
+                <p className="text-lg font-bold text-[#0d141b]">{personalInfo.fullName || personalInfo.email || '—'}</p>
+                <p className="text-xs font-mono text-slate-500 mt-2">ID: {accountId != null ? formatBookId(accountId) : '—'}</p>
               </div>
             </div>
 
@@ -867,16 +916,18 @@ export default function HoSoPage() {
               </button>
               <button
                 onClick={() => {
-                  const qrData = personalInfo.studentId || personalInfo.fullName || personalInfo.email || 'profile'
+                  const qrData = accountId != null ? formatBookId(accountId) : ''
+                  if (!qrData) return
                   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(qrData)}&bgcolor=FFFFFF&color=000000`
                   const link = document.createElement('a')
                   link.href = qrUrl
-                  link.download = `QR-${(personalInfo.studentId || personalInfo.fullName || 'profile').replace(/[^a-zA-Z0-9-_]/g, '_')}.png`
+                  link.download = `QR-ID-tai-khoan-${qrData}.png`
                   document.body.appendChild(link)
                   link.click()
                   document.body.removeChild(link)
                 }}
-                className="flex-1 py-2.5 px-4 rounded-lg bg-[#137fec] hover:bg-[#0f6fd6] text-white text-sm font-medium transition-colors shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
+                disabled={accountId == null}
+                className="flex-1 py-2.5 px-4 rounded-lg bg-[#137fec] hover:bg-[#0f6fd6] text-white text-sm font-medium transition-colors shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[18px]">download</span>
                 Tải về

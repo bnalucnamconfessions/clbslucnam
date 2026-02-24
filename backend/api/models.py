@@ -205,11 +205,27 @@ class BorrowRecord(models.Model):
     """Phiếu mượn sách."""
 
     book = models.ForeignKey(Book, on_delete=models.CASCADE)
-    member = models.ForeignKey(Member, on_delete=models.CASCADE)
+    member = models.ForeignKey(
+        Member,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="Thành viên có tài khoản; null nếu người mượn là khách (không tài khoản).",
+    )
+    guest_name = models.CharField(max_length=255, blank=True, help_text="Tên người mượn khi không có tài khoản.")
+    guest_class = models.CharField(max_length=255, blank=True, help_text="Lớp (ghi chú) khi mượn không tài khoản.")
     borrow_date = models.DateField()
     due_date = models.DateField()
     return_date = models.DateField(null=True, blank=True)
     return_notes = models.TextField(blank=True, help_text="Ghi chú tình trạng sách khi trả (hư hỏng, v.v.)")
+    recorded_by = models.ForeignKey(
+        "Account",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="borrow_records_recorded",
+        help_text="Tài khoản ghi nhận phiếu mượn (người ghi mượn sách).",
+    )
 
     class Meta:
         db_table = "borrow_records"

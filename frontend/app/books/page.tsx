@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Sidebar from '../components/Sidebar'
 import RequireAuth from '../components/RequireAuth'
 import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
+import { formatBookId } from '../../lib/bookId'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
@@ -333,7 +334,7 @@ export default function BooksPage() {
                         <td className="p-4">
                           <input className="h-4 w-4 rounded border-slate-300 bg-white text-primary focus:ring-0 focus:ring-offset-0" type="checkbox"/>
                         </td>
-                        <td className="p-4 text-slate-500 font-mono">{book.id}</td>
+                        <td className="p-4 text-slate-500 font-mono">{formatBookId(book.id)}</td>
                         <td className="p-4">
                           <p className="text-slate-900 font-semibold hover:text-primary cursor-pointer line-clamp-2">{book.title}</p>
                         </td>

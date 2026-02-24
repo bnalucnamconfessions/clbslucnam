@@ -29,7 +29,10 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
       if (fn) localStorage.setItem('adminName', fn)
       if (role) localStorage.setItem('adminRole', role)
       if (picture) localStorage.setItem('adminAvatar', picture)
-      const userInfo = { fullName: fn || 'User', email: email || '', accountEmail: email || '', role: role || 'Người dùng', clubPermission, avatar: picture || '' }
+      const accountIdParam = params.get('accountId')
+      const accountId = accountIdParam ? parseInt(accountIdParam, 10) : null
+      const userInfo: Record<string, unknown> = { fullName: fn || 'User', email: email || '', accountEmail: email || '', role: role || 'Người dùng', clubPermission, avatar: picture || '' }
+      if (!Number.isNaN(accountId) && accountId != null) userInfo.accountId = accountId
       localStorage.setItem('userInfo', JSON.stringify(userInfo))
       window.dispatchEvent(new Event('userInfoUpdated'))
       const isGoogle = typeof token === 'string' && token.startsWith('google-')

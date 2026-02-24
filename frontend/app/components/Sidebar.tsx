@@ -122,7 +122,9 @@ export default function Sidebar() {
         const newRole = data.role || parsed.role || 'Người dùng'
         const newFullName = data.fullName || parsed.fullName || ''
         const newJoinDate = data.joinDate ?? parsed.joinDate ?? ''
+        const accountId = data.accountId ?? parsed.accountId
         const updated = { ...parsed, clubPermission: newPerm, role: newRole, fullName: newFullName, joinDate: newJoinDate }
+        if (accountId != null) (updated as Record<string, unknown>).accountId = accountId
         localStorage.setItem('userInfo', JSON.stringify(updated))
         localStorage.setItem('adminRole', newRole)
         setUserInfo(prev => ({ ...prev, ...updated, clubPermission: newPerm, role: newRole, fullName: newFullName }))

@@ -509,9 +509,11 @@ export default function DashboardPage() {
                     >
                       <div className="relative">
                         <div
-                          className="bg-center bg-no-repeat bg-cover rounded-full h-10 w-10 border-2 border-slate-200 bg-slate-100"
-                          style={r.avatarUrl ? { backgroundImage: `url("${r.avatarUrl}")` } : undefined}
-                        />
+                          className="flex items-center justify-center rounded-full h-10 w-10 border-2 border-slate-200 bg-slate-100 overflow-hidden"
+                          style={r.avatarUrl ? { backgroundImage: `url("${r.avatarUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+                        >
+                          {!r.avatarUrl && <span className="material-symbols-outlined text-slate-400 text-2xl" aria-hidden>person</span>}
+                        </div>
                         {r.rank <= 3 && (
                           <div className={`absolute -top-1 -right-1 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center ${r.rank === 1 ? 'bg-yellow-500 text-black' : r.rank === 2 ? 'bg-gray-400 text-black' : 'bg-orange-700'}`}>
                             {r.rank}

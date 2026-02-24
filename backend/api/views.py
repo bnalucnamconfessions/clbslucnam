@@ -90,6 +90,7 @@ def login(request):
         "email": acc.email or "",
         "role": role_display,
         "clubPermission": acc.club_permission or "user",
+        "accountId": acc.id,
     })
 
 
@@ -142,6 +143,8 @@ def auth_me(request):
         "role": role_display,
         "email": (getattr(acc, "display_email", "") or "").strip() or acc.email or "",
         "joinDate": join_date_str,
+        "avatarUrl": acc.avatar_url or None,
+        "accountId": acc.id,
     })
 
 
@@ -586,8 +589,18 @@ def google_auth_callback(request):
         email = idinfo.get("email", "")
         name = idinfo.get("name", email.split("@")[0] if email else "User")
         app_token = "google-" + (idinfo.get("sub", "") or "demo")
+        lookup_email = email or f"google-{idinfo.get('sub', '')}"
+        acc, _ = Account.objects.get_or_create(
+            email=lookup_email,
+            provider="google",
+            defaults={"full_name": name, "avatar_url": idinfo.get("picture") or None},
+        )
+        acc.full_name = name
+        acc.avatar_url = idinfo.get("picture") or None
+        acc.last_login_at = timezone.now()
+        acc.save(update_fields=["full_name", "avatar_url", "last_login_at"])
         role_enc = urlquote("Quản trị viên")
-        params = f"token={app_token}&fullName={urlquote(name)}&role={role_enc}"
+        params = f"token={app_token}&fullName={urlquote(name)}&role={role_enc}&accountId={acc.id}"
         if email:
             params += f"&email={urlquote(email)}"
         return redirect(f"{frontend_url}/dang-nhap?{params}")
@@ -1070,7 +1083,7 @@ def overdue_books(request):
         {
             "id": r.id,
             "bookTitle": r.book.title if r.book else "",
-            "memberName": r.member.name if r.member else "",
+            "memberName": (r.member.name if r.member else (r.guest_name or "Khách") + (f" ({r.guest_class})" if r.guest_class else "")),
             "dueDate": r.due_date.isoformat() if r.due_date else None,
             "daysOverdue": (today - r.due_date).days if r.due_date else 0,
         }
@@ -1654,14 +1667,19 @@ def borrow_list(request):
     rows = BorrowRecord.objects.select_related("book", "member").filter(return_date__isnull=True)
     result = []
     for r in rows:
-        uid = r.member.user_id or ""
-        member_id_display = str(_member_uid_to_acc_id(uid)) if _member_uid_to_acc_id(uid) is not None else (uid or str(r.member_id))
+        if r.member:
+            uid = r.member.user_id or ""
+            member_id_display = str(_member_uid_to_acc_id(uid)) if _member_uid_to_acc_id(uid) is not None else (uid or str(r.member_id))
+            member_name = r.member.name
+        else:
+            member_id_display = "guest"
+            member_name = r.guest_name or "Khách" + (f" ({r.guest_class})" if r.guest_class else "")
         result.append({
             "id": r.id,
             "bookId": r.book_id,
             "bookTitle": r.book.title,
             "memberId": member_id_display,
-            "memberName": r.member.name,
+            "memberName": member_name,
             "borrowDate": r.borrow_date.isoformat(),
             "dueDate": r.due_date.isoformat(),
         })
@@ -1671,17 +1689,25 @@ def borrow_list(request):
 @csrf_exempt
 @api_view(["POST"])
 def borrow_create(request):
-    _, err = _require_kho_sach(request)
+    caller, err = _require_kho_sach(request)
     if err is not None:
         return err
     data = request.data
     book_id = data.get("bookId")
     member_id_param = data.get("memberId")
-    if not book_id or member_id_param is None:
-        return Response({"detail": "Thiếu bookId hoặc memberId"}, status=status.HTTP_400_BAD_REQUEST)
-    member, err_resp = _resolve_member_by_uid(str(member_id_param))
-    if err_resp is not None:
-        return err_resp
+    guest_name = (data.get("guestName") or data.get("guest_name") or "").strip()[:255]
+    guest_class = (data.get("guestClass") or data.get("guest_class") or "").strip()[:255]
+    is_guest = member_id_param is None or (isinstance(member_id_param, str) and member_id_param.strip() == "")
+    if not book_id:
+        return Response({"detail": "Thiếu bookId"}, status=status.HTTP_400_BAD_REQUEST)
+    if is_guest:
+        if not guest_name:
+            return Response({"detail": "Người mượn không tài khoản cần nhập tên (guestName)."}, status=status.HTTP_400_BAD_REQUEST)
+        member = None
+    else:
+        member, err_resp = _resolve_member_by_uid(str(member_id_param))
+        if err_resp is not None:
+            return err_resp
     try:
         book = Book.objects.get(pk=book_id)
     except Book.DoesNotExist:
@@ -1698,7 +1724,15 @@ def borrow_create(request):
             due_date = borrow_date + timedelta(days=14)
     else:
         due_date = borrow_date + timedelta(days=14)
-    record = BorrowRecord.objects.create(book=book, member=member, borrow_date=borrow_date, due_date=due_date)
+    record = BorrowRecord.objects.create(
+        book=book,
+        member=member,
+        guest_name=guest_name if is_guest else "",
+        guest_class=guest_class if is_guest else "",
+        borrow_date=borrow_date,
+        due_date=due_date,
+        recorded_by=caller,
+    )
     book.is_borrowed = True
     book.save(update_fields=["is_borrowed"])
     return Response({"id": record.id}, status=status.HTTP_201_CREATED)
@@ -1715,7 +1749,7 @@ def return_book(request):
     if not record_id:
         return Response({"detail": "Thiếu recordId"}, status=status.HTTP_400_BAD_REQUEST)
     try:
-        record = BorrowRecord.objects.select_related("book", "member").get(pk=record_id)
+        record = BorrowRecord.objects.select_related("book", "member", "recorded_by").get(pk=record_id)
     except BorrowRecord.DoesNotExist:
         return Response({"detail": "Phiếu mượn không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
     from datetime import date
@@ -1738,18 +1772,28 @@ def return_book(request):
 
     # Tự động gửi thông báo tới Ban QLS khi có ghi chú trả sách (do tài khoản xác nhận trả đăng)
     if record.return_notes:
-        sender_label = caller.full_name or caller.email or _ROLE_DISPLAY.get((caller.club_permission or "user").strip().lower(), "Tài khoản xác nhận trả")
+        sender_label = (caller.full_name or "").strip() or (caller.email.split("@")[0] if getattr(caller, "email", None) else None) or getattr(caller, "email", "") or _ROLE_DISPLAY.get((caller.club_permission or "user").strip().lower(), "Tài khoản xác nhận trả")
         book = record.book
         member = record.member
+        member_display = member.name if member else (record.guest_name or "Khách") + (f" ({record.guest_class})" if record.guest_class else "")
+        acc_id = _member_uid_to_acc_id(member.user_id) if member else None
+        if acc_id:
+            acc = Account.objects.filter(pk=acc_id).first()
+            if acc and getattr(acc, "full_name", None) and (acc.full_name or "").strip():
+                member_display = (acc.full_name or "").strip()
         title = f"Ghi chú trả sách: {book.title}"
         summary_parts = [
             f"Ghi chú: {record.return_notes}",
             "",
             f"Sách: {book.title}" + (f" - {book.author}" if book.author else ""),
             f"Mã sách: {book.id}",
-            f"Người trả: {member.name}",
-            f"Ngày trả: {record.return_date.strftime('%d/%m/%Y')}",
         ]
+        if record.recorded_by_id:
+            rec_by = record.recorded_by
+            rec_by_name = (getattr(rec_by, "full_name", None) or "").strip() or (getattr(rec_by, "email", None) or "").split("@")[0] or getattr(rec_by, "email", "") or "—"
+            summary_parts.append(f"Người ghi mượn sách: {rec_by_name}")
+        summary_parts.append(f"Người mượn: {member_display}")
+        summary_parts.append(f"Ngày trả: {record.return_date.strftime('%d/%m/%Y')}")
         notif = Notification.objects.create(
             title=title,
             summary="\n".join(summary_parts),

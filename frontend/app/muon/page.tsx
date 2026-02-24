@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Sidebar from '../components/Sidebar'
 import RequireAuth from '../components/RequireAuth'
 import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
+import { formatBookId } from '../../lib/bookId'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
@@ -44,8 +45,8 @@ interface BorrowRecordItem {
 export default function MuonPage() {
   const [inputMode, setInputMode] = useState<'qr' | 'manual'>('qr')
   const [memberId, setMemberId] = useState('')
-  const [manualMemberId, setManualMemberId] = useState('')
   const [availableBooks, setAvailableBooks] = useState<BookItem[]>([])
+  const [allBooks, setAllBooks] = useState<BookItem[]>([])
   const [members, setMembers] = useState<MemberItem[]>([])
   const [manualInfo, setManualInfo] = useState({
     name: '',
@@ -70,6 +71,7 @@ export default function MuonPage() {
       ])
       if (booksRes.ok) {
         const data = await booksRes.json()
+        setAllBooks(data)
         setAvailableBooks(data.filter((b: BookItem) => !b.isBorrowed))
       }
       if (membersRes.ok) {
@@ -93,12 +95,12 @@ export default function MuonPage() {
 
   useRefetchOnFocusAndInterval(fetchData, { intervalMs: 20 * 1000 })
 
-  const selectedMember = inputMode === 'qr'
-    ? (() => {
+  const selectedMember = inputMode === 'manual'
+    ? null
+    : (() => {
         const t = memberId.trim()
         return members.find(m => m.userId === t) || (t && members.find(m => String(m.id) === t))
       })()
-    : members.find(m => String(m.id) === manualMemberId)
 
   const memberBorrows = selectedMember
     ? borrows.filter(b => String(b.memberId) === String(selectedMember.id))
@@ -113,6 +115,11 @@ export default function MuonPage() {
   const handleAddBook = () => {
     const id = bookInput.trim()
     if (!id || books.length >= 3) return
+    const foundInAll = allBooks.find(b => b.id === id)
+    if (!foundInAll) return
+    if (foundInAll.isBorrowed) {
+      return
+    }
     const found = availableBooks.find(b => b.id === id)
     if (found && !books.some(b => b.id === found.id)) {
       setBooks([...books, {
@@ -136,9 +143,17 @@ export default function MuonPage() {
   }
 
   const handleConfirm = async () => {
-    if (!selectedMember) {
-      alert('Vui lòng nhập mã thành viên đúng hoặc chọn thành viên.')
-      return
+    const isGuest = inputMode === 'manual'
+    if (isGuest) {
+      if (!manualInfo.name.trim()) {
+        alert('Vui lòng nhập tên người mượn.')
+        return
+      }
+    } else {
+      if (!selectedMember) {
+        alert('Vui lòng nhập mã thành viên đúng hoặc chọn thành viên.')
+        return
+      }
     }
     if (books.length === 0) {
       alert('Vui lòng thêm ít nhất một sách.')
@@ -149,10 +164,20 @@ export default function MuonPage() {
     try {
       for (const book of books) {
         const { headers, accountEmail } = getApiAuth()
+        const body: Record<string, unknown> = {
+          bookId: Number(book.id),
+          accountEmail: accountEmail || undefined,
+        }
+        if (isGuest) {
+          body.guestName = manualInfo.name.trim()
+          body.guestClass = (manualInfo.className || '').trim()
+        } else {
+          body.memberId = selectedMember!.id
+        }
         const res = await fetch(apiUrl('/api/borrow/create'), {
           method: 'POST',
           headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookId: Number(book.id), memberId: selectedMember.id, accountEmail: accountEmail || undefined }),
+          body: JSON.stringify(body),
         })
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
@@ -160,10 +185,16 @@ export default function MuonPage() {
         }
       }
       const bookList = books.map(b => b.title).join(', ')
-      logActivity('Mượn sách', selectedMember ? `Thành viên: ${selectedMember.name} | Sách: ${bookList || `${books.length} cuốn`}` : `Sách: ${bookList || `${books.length} cuốn`}`)
+      const borrowerLabel = isGuest
+        ? `${manualInfo.name.trim()}${manualInfo.className.trim() ? ` (${manualInfo.className.trim()})` : ''}`
+        : (selectedMember ? `Thành viên: ${selectedMember.name}` : '')
+      logActivity('Mượn sách', `${borrowerLabel} | Sách: ${bookList || `${books.length} cuốn`}`)
       alert('Xác nhận mượn sách thành công!')
       setBooks([])
       setBookInput('')
+      if (isGuest) {
+        setManualInfo({ name: '', className: '', borrowDate: '' })
+      }
       fetchData()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Lỗi kết nối')
@@ -173,6 +204,9 @@ export default function MuonPage() {
   }
 
   const isLimitReached = books.length >= 3
+  const bookInputTrim = bookInput.trim()
+  const lookedUpBook = bookInputTrim ? allBooks.find(b => b.id === bookInputTrim) : null
+  const isScannedBookBorrowed = lookedUpBook?.isBorrowed === true
   const today = new Date()
   const dueDate = new Date(today)
   dueDate.setDate(dueDate.getDate() + 14)
@@ -227,12 +261,11 @@ export default function MuonPage() {
                     >
                       Quét QR ID
                     </button>
-                    <button
-                      onClick={() => {
-                        setInputMode('manual')
-                        setMemberId('')
-                        setManualMemberId(manualMemberId || (members[0] ? String(members[0].id) : ''))
-                      }}
+                      <button
+                        onClick={() => {
+                          setInputMode('manual')
+                          setMemberId('')
+                        }}
                       className={`flex-1 py-2 text-sm font-medium rounded transition-all ${
                         inputMode === 'manual' 
                           ? 'text-primary bg-white shadow-sm' 
@@ -245,7 +278,7 @@ export default function MuonPage() {
                   
                   {inputMode === 'qr' ? (
                     <div className="flex flex-col gap-3">
-                      <label className="text-xs font-semibold text-slate-500 uppercase">Mã tài khoản (12 số)</label>
+                      <label className="text-xs font-semibold text-slate-500 uppercase">ID tài khoản (12 số)</label>
                       <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                           <span className="material-symbols-outlined text-slate-400">qr_code_scanner</span>
@@ -265,23 +298,9 @@ export default function MuonPage() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-3">
+                      <p className="text-xs text-slate-500">Dành cho người mượn không có tài khoản. Chỉ cần nhập tên và lớp.</p>
                       <div className="flex flex-col gap-2">
-                        <label className="text-xs font-semibold text-slate-500 uppercase">Chọn thành viên</label>
-                        <select
-                          className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                          value={manualMemberId}
-                          onChange={(e) => setManualMemberId(e.target.value)}
-                        >
-                          <option value="">-- Chọn thành viên --</option>
-                          {members.map((m) => (
-                            <option key={m.id} value={String(m.id)}>
-                              {m.name} (ID: {m.userId})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <label className="text-xs font-semibold text-slate-500 uppercase">Tên (ghi chú)</label>
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Tên người mượn</label>
                         <input
                           className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                           placeholder="Nhập tên người mượn..."
@@ -291,7 +310,7 @@ export default function MuonPage() {
                         />
                       </div>
                       <div className="flex flex-col gap-2">
-                        <label className="text-xs font-semibold text-slate-500 uppercase">Lớp (ghi chú)</label>
+                        <label className="text-xs font-semibold text-slate-500 uppercase">Lớp</label>
                         <input
                           className="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                           placeholder="Nhập lớp..."
@@ -363,13 +382,13 @@ export default function MuonPage() {
                     </div>
                     <input
                       autoFocus
-                      className="block w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                      className={`block w-full pl-10 pr-4 py-3 rounded-lg text-sm placeholder-slate-400 focus:outline-none focus:ring-1 transition-all border ${isScannedBookBorrowed ? 'bg-amber-50 border-amber-300 focus:border-amber-500 focus:ring-amber-500' : 'bg-slate-50 border-slate-200 focus:border-primary focus:ring-primary'}`}
                       placeholder="Quét mã QR sách"
                       type="text"
                       value={bookInput}
                       onChange={(e) => setBookInput(e.target.value)}
                       onKeyPress={(e) => {
-                        if (e.key === 'Enter' && !isLimitReached) {
+                        if (e.key === 'Enter' && !isLimitReached && !isScannedBookBorrowed) {
                           handleAddBook()
                         }
                       }}
@@ -378,13 +397,23 @@ export default function MuonPage() {
                   </div>
                   <button
                     onClick={handleAddBook}
-                    disabled={isLimitReached || !bookInput.trim()}
+                    disabled={isLimitReached || !bookInputTrim || isScannedBookBorrowed}
                     className="h-[46px] px-6 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <span className="material-symbols-outlined">add</span>
                     <span className="hidden sm:inline">Nhập mã</span>
                   </button>
                 </div>
+
+                {isScannedBookBorrowed && lookedUpBook && (
+                  <div className="flex items-center gap-3 p-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-800">
+                    <span className="material-symbols-outlined text-2xl text-amber-600">bookmark</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium">{lookedUpBook.title}{lookedUpBook.author ? ` - ${lookedUpBook.author}` : ''}</p>
+                      <p className="text-sm text-amber-700 mt-0.5">Sách đang được mượn. Xóa mã trong ô trên và quét sách khác để thêm vào phiếu mượn.</p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col min-h-[400px]">
                   <div className="flex flex-col">
@@ -430,7 +459,7 @@ export default function MuonPage() {
                           books.map((book, index) => (
                             <tr key={book.id} className="group hover:bg-slate-50 transition-colors">
                               <td className="p-4 text-slate-400">{index + 1}</td>
-                              <td className="p-4 font-mono text-slate-600">{book.bookId}</td>
+                              <td className="p-4 font-mono text-slate-600">{formatBookId(book.bookId)}</td>
                               <td className="p-4">
                                 <div className="flex flex-col justify-center min-w-0">
                                   <span className="text-slate-900 font-medium line-clamp-1">{book.title}</span>
@@ -481,7 +510,7 @@ export default function MuonPage() {
                       </button>
                       <button
                         onClick={handleConfirm}
-                        disabled={books.length === 0 || submitting || !selectedMember}
+                        disabled={books.length === 0 || submitting || (inputMode === 'qr' ? !selectedMember : !manualInfo.name.trim())}
                         className="flex-[2] px-4 py-3 rounded-lg text-white font-bold shadow-lg shadow-blue-500/30 transition-all flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-600"
                         style={{ backgroundColor: '#137fec' }}
                       >

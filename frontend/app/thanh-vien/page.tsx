@@ -7,6 +7,8 @@ import DatePickerButton from '../components/DatePickerButton'
 import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
+import { formatBookId } from '../../lib/bookId'
+import { getInitials } from '../../lib/initials'
 
 /** Quản trị viên và Ban chủ nhiệm có quyền như nhau. Trưởng ban thuộc BCN; Phó ban thuộc các ban (không thuộc BCN). */
 const CAN_MANAGE_ACCOUNTS: string[] = ['admin', 'chairperson', 'vice_chairperson', 'head_hr_finance', 'vice_head_hr_finance', 'member_hr_finance']
@@ -476,6 +478,7 @@ export default function ThanhVienPage() {
       setEditingMember(null)
       setFormMember({ name: '', userId: '', permission: 'user', department: '', role: '', status: 'active', joinDate: '' })
       fetchMembers()
+      fetchAccounts()
       // Nếu thành viên vừa sửa là tài khoản đang đăng nhập (userId = id số tài khoản) thì cập nhật localStorage để Sidebar đổi menu ngay
       const uid = (editingMember.userId || '').trim().replace(/^acc-/, '')
       const accId = /^\d+$/.test(uid) ? parseInt(uid, 10) : NaN
@@ -513,16 +516,17 @@ export default function ThanhVienPage() {
   const now = new Date()
   const thisMonth = now.getMonth()
   const thisYear = now.getFullYear()
-  const newThisMonth = members.filter(m => {
+  const membersWithRole = members.filter(m => getPermissionFromMember(m.department || '', m.role || '') !== 'user')
+  const newThisMonth = membersWithRole.filter(m => {
     if (!m.joinDate) return false
     const [d, mo, y] = (m.joinDate || '').split('/').map(Number)
     return y === thisYear && mo === thisMonth + 1
   }).length
   const stats = {
-    total: members.length,
+    total: membersWithRole.length,
     newThisMonth,
-    active: members.filter(m => m.status === 'active').length,
-    inactive: members.filter(m => m.status === 'inactive').length
+    active: membersWithRole.filter(m => m.status === 'active').length,
+    inactive: membersWithRole.filter(m => m.status === 'inactive').length
   }
 
   /** Màu badge theo phân quyền (đồng bộ với bảng Tài khoản đăng nhập). */
@@ -539,14 +543,6 @@ export default function ThanhVienPage() {
     return 'bg-slate-100 text-slate-800 border-slate-200'
   }
 
-  const getInitials = (name: string) => {
-    const parts = name.split(' ')
-    if (parts.length >= 2) {
-      return (parts[parts.length - 2][0] + parts[parts.length - 1][0]).toUpperCase()
-    }
-    return name.substring(0, 2).toUpperCase()
-  }
-
   const getAvatarColor = (name: string) => {
     const colors = [
       { bg: 'bg-blue-100', text: 'text-blue-600', border: 'border-blue-200' },
@@ -558,11 +554,12 @@ export default function ThanhVienPage() {
     return colors[index]
   }
 
-  // Filter members
+  // Filter members (ẩn thành viên chỉ có vai trò Người dùng — không hiện trong tab Thành viên CLB)
   const filteredMembers = members.filter(member => {
+    const memberPerm = getPermissionFromMember(member.department || '', member.role || '')
+    if (memberPerm === 'user') return false
     const matchesSearch = member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          member.userId.includes(searchQuery)
-    const memberPerm = getPermissionFromMember(member.department || '', member.role || '')
     const matchesPermission = filterPermission === 'all' || memberPerm === filterPermission
     const matchesStatus = filterStatus === 'all' || 
                          (filterStatus === 'active' && member.status === 'active') ||
@@ -878,16 +875,16 @@ export default function ThanhVienPage() {
                                           if (fb) fb.style.display = 'flex'
                                         }}
                                       />
-                                      <span className="text-slate-600 font-bold text-sm" style={{ display: 'none' }}>{acc.fullName?.charAt(0)?.toUpperCase() || '?'}</span>
+                                      <span className="text-slate-600 font-bold text-sm" style={{ display: 'none' }}>{getInitials(acc.fullName || '')}</span>
                                     </div>
                                   ) : (
                                     <div className="h-10 w-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm border border-blue-200">
-                                      {acc.fullName?.charAt(0)?.toUpperCase() || '?'}
+                                      {getInitials(acc.fullName || '')}
                                     </div>
                                   )}
                                   <div>
                                     <div className="font-semibold text-slate-900">{acc.fullName || '-'}</div>
-                                    <div className="text-xs text-slate-500">ID: {acc.id}</div>
+                                    <div className="text-xs text-slate-500">ID: {formatBookId(acc.id)}</div>
                                   </div>
                                 </div>
                               </td>
@@ -998,7 +995,7 @@ export default function ThanhVienPage() {
                               )}
                               <div>
                                 <div className="font-semibold text-slate-900">{member.name}</div>
-                                <div className="text-xs text-slate-500">ID: {member.userId ?? ''}</div>
+                                <div className="text-xs text-slate-500">ID: {member.userId != null && member.userId !== '' ? formatBookId(member.userId) : '—'}</div>
                               </div>
                             </div>
                           </td>
@@ -1276,7 +1273,7 @@ export default function ThanhVienPage() {
                     </div>
                   ) : (
                     <div className="h-12 w-12 rounded-full bg-[#137fec]/20 text-[#137fec] flex items-center justify-center font-bold text-lg shrink-0 border-2 border-white shadow-sm">
-                      {(editingAccount.fullName || editingAccount.email || '?').charAt(0).toUpperCase()}
+                      {getInitials(editingAccount.fullName || editingAccount.email || '')}
                     </div>
                   )}
                   <div className="min-w-0 flex-1">

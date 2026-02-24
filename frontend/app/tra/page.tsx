@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Sidebar from '../components/Sidebar'
 import RequireAuth from '../components/RequireAuth'
 import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
+import { formatBookId } from '../../lib/bookId'
 import { logActivity } from '../../lib/activityLog'
 import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
 
@@ -263,7 +264,7 @@ export default function TraPage() {
                           <p><span className="text-slate-500">Tên:</span> {scannedBook.title}</p>
                           {scannedBook.author && <p><span className="text-slate-500">Tác giả:</span> {scannedBook.author}</p>}
                           {scannedBook.genre && <p><span className="text-slate-500">Thể loại:</span> {scannedBook.genre}</p>}
-                          <p><span className="text-slate-500">Mã sách:</span> <span className="font-mono">{scannedBook.bookId}</span></p>
+                          <p><span className="text-slate-500">Mã sách:</span> <span className="font-mono">{formatBookId(scannedBook.bookId)}</span></p>
                         </div>
                       </div>
                   )}

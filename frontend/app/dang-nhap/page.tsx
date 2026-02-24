@@ -38,11 +38,14 @@ export default function DangNhapPage() {
       const role = params.get('role') || searchParams.get('role')
       const clubPermission = params.get('clubPermission') || searchParams.get('clubPermission') || 'user'
       const picture = params.get('picture') || searchParams.get('picture')
+      const accountIdParam = params.get('accountId') || searchParams.get('accountId')
+      const accountId = accountIdParam ? parseInt(accountIdParam, 10) : null
       if (fn) localStorage.setItem('adminName', fn)
       if (role) localStorage.setItem('adminRole', role)
       if (picture) localStorage.setItem('adminAvatar', picture)
       const email = params.get('email') || searchParams.get('email') || ''
-      const userInfo = { fullName: fn || 'User', email, accountEmail: email, role: role || 'Người dùng', clubPermission, avatar: picture || '' }
+      const userInfo: Record<string, unknown> = { fullName: fn || 'User', email, accountEmail: email, role: role || 'Người dùng', clubPermission, avatar: picture || '' }
+      if (!Number.isNaN(accountId) && accountId != null) userInfo.accountId = accountId
       localStorage.setItem('userInfo', JSON.stringify(userInfo))
       window.dispatchEvent(new Event('userInfoUpdated'))
       if (token.startsWith('google-') && (email || '').trim()) logActivity('Đăng nhập', `Đăng nhập qua Google | Email: ${(email || '').trim() || '—'}`, (email || '').trim() || undefined)
@@ -88,7 +91,8 @@ export default function DangNhapPage() {
           localStorage.setItem('adminName', fn)
           localStorage.setItem('adminRole', role)
           localStorage.setItem('adminAvatar', '')
-          const userInfo = { fullName: fn, email: data.email || '', accountEmail: data.email || '', role, clubPermission, avatar: '' }
+          const userInfo: Record<string, unknown> = { fullName: fn, email: data.email || '', accountEmail: data.email || '', role, clubPermission, avatar: '' }
+          if (data.accountId != null) userInfo.accountId = data.accountId
           localStorage.setItem('userInfo', JSON.stringify(userInfo))
           window.dispatchEvent(new Event('userInfoUpdated'))
           logActivity('Đăng nhập', `Đăng nhập bằng tài khoản | Email: ${data.email || username.trim() || '—'}`, data.email || undefined)

@@ -73,14 +73,20 @@ function getNotificationIcon(title: string): { icon: string; bg: string; text: s
 function getSenderLabelForNotification(title: string): string {
   const t = (title || '').toLowerCase()
   if (t.includes('trả sách') || t.includes('ghi chú trả')) return 'Người ghi trả sách'
-  if (t.includes('mượn') || t.includes('xác nhận mượn') || t.includes('phê duyệt mượn')) return 'Người ghi mượn sách'
   return 'Người gửi'
 }
 
-/** Lấy tên người mượn/người trả từ summary thông báo trả sách (dòng "Người trả: ..."). */
+/** Lấy tên người mượn từ summary — dòng "Người mượn: ..." hoặc "Thành viên trả sách: ..." (legacy). */
 function getBorrowerNameFromSummary(summary: string): string | null {
   if (!summary?.trim()) return null
-  const m = summary.match(/Người trả:\s*([^\n]+)/)
+  const m = summary.match(/(?:Người mượn|Thành viên trả sách|Người trả):\s*([^\n]+)/)
+  return m ? m[1].trim() : null
+}
+
+/** Lấy tên người ghi mượn sách (người ghi phiếu mượn) từ summary — dòng "Người ghi mượn sách: ...". */
+function getBorrowRecorderNameFromSummary(summary: string): string | null {
+  if (!summary?.trim()) return null
+  const m = summary.match(/Người ghi mượn sách:\s*([^\n]+)/)
   return m ? m[1].trim() : null
 }
 
@@ -742,9 +748,9 @@ export default function ThongBaoPage() {
                           <div>
                             <h2 className="text-xl font-bold text-slate-900 leading-tight">{detailModal.title}</h2>
                             <div className="flex items-center gap-3 mt-1 flex-wrap">
-                              {(detailModal.title || '').toLowerCase().includes('trả sách') && getBorrowerNameFromSummary(detailModal.summary || '') && (
+                              {(detailModal.title || '').toLowerCase().includes('trả sách') && getBorrowRecorderNameFromSummary(detailModal.summary || '') && (
                                 <>
-                                  <span className="text-sm text-slate-500">Người ghi mượn sách: <strong>{getBorrowerNameFromSummary(detailModal.summary || '')}</strong></span>
+                                  <span className="text-sm text-slate-500">Người ghi mượn sách: <strong>{getBorrowRecorderNameFromSummary(detailModal.summary || '')}</strong></span>
                                   <span className="size-1 rounded-full bg-slate-200" />
                                 </>
                               )}
@@ -755,7 +761,10 @@ export default function ThongBaoPage() {
                           </div>
                         </div>
                         <div className="prose prose-sm max-w-none text-slate-900 leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-1 whitespace-pre-line text-[15px] leading-7">
-                          {(detailModal.summary || '').replace(/Người mượn:/g, 'Tài khoản người dùng:')}
+                          {(detailModal.summary || '')
+                            .split('\n')
+                            .filter(line => !line.trimStart().startsWith('Người ghi mượn sách:'))
+                            .join('\n')}
                         </div>
                       </div>
                       <div className="px-8 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
