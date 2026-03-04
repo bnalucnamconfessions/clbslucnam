@@ -1,14 +1,11 @@
-'use client'
-
 import { useState, useEffect } from 'react'
-import Sidebar from '../components/Sidebar'
-import RequireAuth from '../components/RequireAuth'
-import QRForm from '../components/QRForm'
-import StatsCards from '../components/StatsCards'
-import QRCodeTable from '../components/QRCodeTable'
-import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
-import { logActivity } from '../../lib/activityLog'
-import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
+import Sidebar from '@/components/Sidebar'
+import QRForm from '@/components/QRForm'
+import StatsCards from '@/components/StatsCards'
+import QRCodeTable from '@/components/QRCodeTable'
+import { apiUrl, apiUrlWithAuth, getApiAuth } from '@/lib/api'
+import { logActivity } from '@/lib/activityLog'
+import { useRefetchOnFocusAndInterval } from '@/lib/refetch'
 
 type BookItem = { id: string; title: string; author: string; genre: string; publisher: string; price: string; isBorrowed: boolean }
 
@@ -186,8 +183,7 @@ export default function QRPage() {
   }
 
   return (
-    <RequireAuth>
-      <div className="relative flex min-h-screen w-full flex-row bg-slate-50 text-slate-900 font-display overflow-hidden h-screen">
+    <div className="relative flex min-h-screen w-full flex-row bg-slate-50 text-slate-900 font-display overflow-hidden h-screen">
         <Sidebar />
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 relative">
           <div className="flex-1 overflow-y-auto scroll-smooth bg-white no-scrollbar">
@@ -343,6 +339,5 @@ export default function QRPage() {
           </div>
         </main>
       </div>
-    </RequireAuth>
   )
 }

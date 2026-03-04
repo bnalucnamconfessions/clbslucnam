@@ -1,7 +1,5 @@
-'use client'
-
 import { useState, useEffect, useCallback } from 'react'
-import Link from 'next/link'
+import { Link } from 'react-router-dom'
 import {
   LineChart,
   Line,
@@ -12,11 +10,10 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts'
-import Sidebar from '../components/Sidebar'
-import Header from '../components/Header'
-import RequireAuth from '../components/RequireAuth'
-import { API_BASE, apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
-import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
+import Sidebar from '@/components/Sidebar'
+import Header from '@/components/Header'
+import { API_BASE, apiUrl, apiUrlWithAuth, getApiAuth } from '@/lib/api'
+import { useRefetchOnFocusAndInterval } from '@/lib/refetch'
 
 type DashboardStats = {
   borrowToday: number
@@ -196,9 +193,7 @@ export default function DashboardPage() {
   }, [stats, topReaders, overdue, trendData, chartPeriod, currentMonth, currentYear])
 
   return (
-    <>
-      <RequireAuth>
-        <div className="relative flex min-h-screen w-full flex-row bg-slate-50 text-slate-900 font-display overflow-hidden h-screen">
+    <div className="relative flex min-h-screen w-full flex-row bg-slate-50 text-slate-900 font-display overflow-hidden h-screen">
           <Sidebar />
           <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 relative">
         {/* Main Content */}
@@ -320,7 +315,7 @@ export default function DashboardPage() {
             {/* Thu chi & Quyên góp & Thông báo */}
             <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Tổng quỹ */}
-              <Link href="/dashboard/tai-chinh" className="flex flex-col gap-2 rounded-xl p-6 border border-emerald-200 bg-white hover:border-emerald-300 transition-colors group shadow-sm">
+              <Link to="/dashboard/tai-chinh" className="flex flex-col gap-2 rounded-xl p-6 border border-emerald-200 bg-white hover:border-emerald-300 transition-colors group shadow-sm">
                 <div className="flex items-center justify-between">
                   <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-emerald-600 transition-colors">
                     Tổng quỹ hiện tại
@@ -332,7 +327,7 @@ export default function DashboardPage() {
               </Link>
 
               {/* Đơn chờ duyệt */}
-              <Link href="/dashboard/tai-chinh" className="flex flex-col gap-2 rounded-xl p-6 border border-amber-200 bg-white hover:border-amber-300 transition-colors group shadow-sm">
+              <Link to="/dashboard/tai-chinh" className="flex flex-col gap-2 rounded-xl p-6 border border-amber-200 bg-white hover:border-amber-300 transition-colors group shadow-sm">
                 <div className="flex items-center justify-between">
                   <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-amber-600 transition-colors">
                     Đơn chờ duyệt
@@ -344,7 +339,7 @@ export default function DashboardPage() {
               </Link>
 
               {/* Quyên góp */}
-              <Link href="/dashboard/quyen-gop" className="flex flex-col gap-2 rounded-xl p-6 border border-violet-200 bg-white hover:border-violet-300 transition-colors group shadow-sm">
+              <Link to="/dashboard/quyen-gop" className="flex flex-col gap-2 rounded-xl p-6 border border-violet-200 bg-white hover:border-violet-300 transition-colors group shadow-sm">
                 <div className="flex items-center justify-between">
                   <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-violet-600 transition-colors">
                     Tiến độ quyên góp
@@ -362,7 +357,7 @@ export default function DashboardPage() {
               </Link>
 
               {/* Thông báo */}
-              <Link href="/thong-bao" className="flex flex-col gap-2 rounded-xl p-6 border border-slate-200 bg-white hover:border-primary/50 transition-colors group shadow-sm">
+              <Link to="/thong-bao" className="flex flex-col gap-2 rounded-xl p-6 border border-slate-200 bg-white hover:border-primary/50 transition-colors group shadow-sm">
                 <div className="flex items-center justify-between">
                   <p className="text-slate-500 text-sm font-medium leading-normal group-hover:text-primary transition-colors">
                     Thông báo
@@ -379,42 +374,42 @@ export default function DashboardPage() {
               <h3 className="text-slate-900 text-lg font-bold leading-normal mb-4">Truy cập nhanh</h3>
               <div className="flex flex-wrap gap-3">
                 <Link
-                  href="/muon"
+                  to="/muon"
                   className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-primary hover:bg-blue-50 transition-colors group"
                 >
                   <span className="material-symbols-outlined text-primary">book</span>
                   <span className="text-sm font-medium text-slate-900 group-hover:text-primary">Mượn sách</span>
                 </Link>
                 <Link
-                  href="/tra"
+                  to="/tra"
                   className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-primary hover:bg-blue-50 transition-colors group"
                 >
                   <span className="material-symbols-outlined text-primary">assignment_return</span>
                   <span className="text-sm font-medium text-slate-900 group-hover:text-primary">Trả sách</span>
                 </Link>
                 <Link
-                  href="/dashboard/tai-chinh"
+                  to="/dashboard/tai-chinh"
                   className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 transition-colors group"
                 >
                   <span className="material-symbols-outlined text-emerald-600">payments</span>
                   <span className="text-sm font-medium text-slate-900 group-hover:text-emerald-600">Thu chi</span>
                 </Link>
                 <Link
-                  href="/thong-bao"
+                  to="/thong-bao"
                   className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-primary hover:bg-blue-50 transition-colors group"
                 >
                   <span className="material-symbols-outlined text-primary">campaign</span>
                   <span className="text-sm font-medium text-slate-900 group-hover:text-primary">Thông báo</span>
                 </Link>
                 <Link
-                  href="/books"
+                  to="/books"
                   className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-primary hover:bg-blue-50 transition-colors group"
                 >
                   <span className="material-symbols-outlined text-primary">library_books</span>
                   <span className="text-sm font-medium text-slate-900 group-hover:text-primary">Kho sách</span>
                 </Link>
                 <Link
-                  href="/dashboard/xep-hang"
+                  to="/dashboard/xep-hang"
                   className="flex items-center gap-2 px-4 py-3 rounded-lg border border-slate-200 hover:border-primary hover:bg-blue-50 transition-colors group"
                 >
                   <span className="material-symbols-outlined text-primary">emoji_events</span>
@@ -545,7 +540,7 @@ export default function DashboardPage() {
                     <p className="text-slate-500 text-sm">Cần gửi thông báo nhắc nhở ngay</p>
                   </div>
                 </div>
-                <Link href="/tra" className="text-sm text-primary font-medium hover:text-blue-400">Xem tất cả</Link>
+                <Link to="/tra" className="text-sm text-primary font-medium hover:text-blue-400">Xem tất cả</Link>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -593,7 +588,5 @@ export default function DashboardPage() {
         </div>
           </main>
         </div>
-      </RequireAuth>
-    </>
   )
 }

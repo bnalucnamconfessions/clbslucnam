@@ -1,15 +1,14 @@
-'use client'
-
 import { useEffect } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
-import { USER_ALLOWED_PATHS, USER_RESTRICTED_PREFIXES } from '../../lib/permissions'
-import { logActivity } from '../../lib/activityLog'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { USER_ALLOWED_PATHS, USER_RESTRICTED_PREFIXES } from '@/lib/permissions'
+import { logActivity } from '@/lib/activityLog'
 
 const AUTH_KEY = 'adminToken'
 
 export default function RequireAuth({ children }: { children: React.ReactNode }) {
-  const router = useRouter()
-  const pathname = usePathname()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const pathname = location.pathname
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -44,13 +43,13 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
         const allowed = USER_ALLOWED_PATHS.some((p) => path === p || path.startsWith(p + '/'))
         const restricted = path === '/dashboard' || USER_RESTRICTED_PREFIXES.some((p) => path.startsWith(p))
         if (restricted || (!allowed && path.startsWith('/dashboard'))) {
-          router.replace('/dashboard/xep-hang')
+          navigate('/dashboard/xep-hang', { replace: true })
         }
       }
       return
     }
     if (!localStorage.getItem(AUTH_KEY)) {
-      router.replace('/dang-nhap')
+      navigate('/dang-nhap', { replace: true })
       return
     }
     const userInfoRaw = localStorage.getItem('userInfo')
@@ -68,14 +67,11 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
       const isAllowed = USER_ALLOWED_PATHS.some((p) => path === p || path.startsWith(p + '/'))
       const isRestricted = path === '/dashboard' || USER_RESTRICTED_PREFIXES.some((p) => path.startsWith(p))
       const willRedirect = isRestricted || (!isAllowed && path.startsWith('/dashboard'))
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'RequireAuth.tsx:user-check', message: 'RequireAuth user path check', data: { path, isAllowed, isRestricted, willRedirect, redirectTo: willRedirect ? '/dashboard/xep-hang' : null }, timestamp: Date.now(), hypothesisId: 'A' }) }).catch(() => {})
-      // #endregion
       if (willRedirect) {
-        router.replace('/dashboard/xep-hang')
+        navigate('/dashboard/xep-hang', { replace: true })
       }
     }
-  }, [router, pathname])
+  }, [navigate, pathname])
 
   return <>{children}</>
 }

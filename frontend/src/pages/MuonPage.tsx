@@ -1,12 +1,9 @@
-'use client'
-
 import { useState, useEffect, useCallback } from 'react'
-import Sidebar from '../components/Sidebar'
-import RequireAuth from '../components/RequireAuth'
-import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
-import { formatBookId } from '../../lib/bookId'
-import { logActivity } from '../../lib/activityLog'
-import { useRefetchOnFocusAndInterval } from '../../lib/refetch'
+import Sidebar from '@/components/Sidebar'
+import { apiUrl, apiUrlWithAuth, getApiAuth } from '@/lib/api'
+import { formatBookId } from '@/lib/bookId'
+import { logActivity } from '@/lib/activityLog'
+import { useRefetchOnFocusAndInterval } from '@/lib/refetch'
 
 interface BookItem {
   id: string
@@ -260,8 +257,7 @@ export default function MuonPage() {
   const returnDate = dueDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
   return (
-    <RequireAuth>
-      <div className="relative flex min-h-screen w-full flex-row bg-slate-50 text-slate-900 font-display overflow-hidden h-screen">
+    <div className="relative flex min-h-screen w-full flex-row bg-slate-50 text-slate-900 font-display overflow-hidden h-screen">
         <Sidebar />
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 relative">
           <div className="flex-1 overflow-y-auto scroll-smooth bg-white no-scrollbar">
@@ -587,6 +583,5 @@ export default function MuonPage() {
           </div>
         </main>
       </div>
-    </RequireAuth>
   )
 }

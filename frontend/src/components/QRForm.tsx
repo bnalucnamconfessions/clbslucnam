@@ -1,9 +1,7 @@
-'use client'
-
 import { useState } from 'react'
-import { apiUrl, getApiAuth } from '../../lib/api'
-import { formatBookId } from '../../lib/bookId'
-import { logActivity } from '../../lib/activityLog'
+import { apiUrl, getApiAuth } from '@/lib/api'
+import { formatBookId } from '@/lib/bookId'
+import { logActivity } from '@/lib/activityLog'
 import DatePickerButton from './DatePickerButton'
 
 const THE_LOAI_OPTIONS = ['Kỹ năng sống', 'Văn học', 'Khoa học', 'Thiếu nhi'] as const

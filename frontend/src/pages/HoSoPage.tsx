@@ -1,13 +1,10 @@
-'use client'
-
 import { useState, useEffect } from 'react'
-import Sidebar from '../components/Sidebar'
-import RequireAuth from '../components/RequireAuth'
-import DatePickerButton from '../components/DatePickerButton'
-import { apiUrl, apiUrlWithAuth, getApiAuth } from '../../lib/api'
-import { logActivity } from '../../lib/activityLog'
-import { getInitials } from '../../lib/initials'
-import { formatBookId } from '../../lib/bookId'
+import Sidebar from '@/components/Sidebar'
+import DatePickerButton from '@/components/DatePickerButton'
+import { apiUrl, apiUrlWithAuth, getApiAuth } from '@/lib/api'
+import { logActivity } from '@/lib/activityLog'
+import { getInitials } from '@/lib/initials'
+import { formatBookId } from '@/lib/bookId'
 
 interface PersonalInfo {
   fullName: string
@@ -436,7 +433,6 @@ export default function HoSoPage() {
   }
 
   return (
-    <RequireAuth>
     <div className="relative flex min-h-screen w-full flex-row bg-slate-50 text-slate-900 font-display overflow-hidden h-screen">
       <Sidebar />
       <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 relative">
@@ -1062,6 +1058,5 @@ export default function HoSoPage() {
         </div>
       )}
     </div>
-    </RequireAuth>
   )
 }

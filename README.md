@@ -6,7 +6,7 @@ Hệ thống quản lý thư viện và hoạt động **Câu lạc bộ Sách v
 
 | Thành phần | Công nghệ | Mô tả |
 |------------|-----------|-------|
-| **Frontend** | Next.js 14, React 18, TypeScript, Tailwind | Giao diện web, đăng nhập (email + Google), dashboard |
+| **Frontend** | React 18, Vite, TypeScript, Tailwind, React Router | Giao diện web, đăng nhập (email + Google), dashboard |
 | **Backend** | Django REST Framework, MySQL | API REST |
 
 ## Tính năng chính
@@ -26,7 +26,7 @@ Hệ thống quản lý thư viện và hoạt động **Câu lạc bộ Sách v
 
 ```
 clbslucnam/
-├── frontend/          # Next.js 14 (React, TypeScript, Tailwind)
+├── frontend/          # React 18 + Vite (TypeScript, Tailwind, React Router)
 ├── backend/           # Django API (Python, MySQL)
 ├── README.md          # File này
 └── .gitignore
@@ -53,7 +53,7 @@ clbslucnam/
    ```bash
    cd frontend
    npm install
-   # .env.local: NEXT_PUBLIC_API_URL=http://localhost:8000
+   # Tạo .env với: VITE_API_URL=http://localhost:8000
    npm run dev
    ```
 

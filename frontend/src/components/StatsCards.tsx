@@ -1,5 +1,3 @@
-'use client'
-
 import React from 'react'
 
 type BookItem = { id: string; title: string; author: string; genre: string; publisher: string; price: string; isBorrowed: boolean }
@@ -13,7 +11,6 @@ export default function StatsCards({
 }: {
   books?: BookItem[]
   loading?: boolean
-  /** Khi true: chỉ render 3 thẻ không bọc grid (để ghép vào grid 6 cột) */
   inline?: boolean
 }) {
   const total = books.length
@@ -55,4 +52,3 @@ export default function StatsCards({
   if (inline) return cards
   return <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">{cards}</div>
 }
-
