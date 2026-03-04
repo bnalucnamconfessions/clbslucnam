@@ -7,3 +7,5 @@ backend/media/
 backend/**/__pycache__/
 backend/**/*.pyc
 .cursor/
+# knowns search index (rebuilt on demand)
+.knowns/search-index/

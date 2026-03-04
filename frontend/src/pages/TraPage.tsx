@@ -152,9 +152,6 @@ export default function TraPage() {
     try {
       const { headers, accountEmail } = getApiAuth()
       const payload = { recordId: selectedRecord.id, returnNotes: returnNotes || undefined, accountEmail: accountEmail || undefined }
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'fd8ec8' }, body: JSON.stringify({ sessionId: 'fd8ec8', location: 'tra/page.tsx:handleConfirm', message: 'Payload before return API', data: { returnNotesLength: (returnNotes || '').length, returnNotesValue: (returnNotes || '').slice(0, 80), hasRecordId: !!payload.recordId }, timestamp: Date.now(), hypothesisId: 'H1' }) }).catch(() => {})
-      // #endregion
       const res = await fetch(apiUrl('/api/return'), {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },

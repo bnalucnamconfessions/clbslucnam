@@ -76,8 +76,10 @@ Chỉ được vào các trang sau (bị chặn các trang khác, redirect về 
 | `/dashboard/doi-tac` | Nhà tài trợ & Đối tác (chỉ xem) |
 | `/ho-so` | Hồ sơ cá nhân |
 | `/thong-bao` | Thông báo (chỉ kênh Người dùng) |
+| `/muon` | Mượn sách (tự mượn cho mình) |
+| `/tra` | Trả sách (trả phiếu của mình) |
 
-**Bị chặn:** `/books`, `/qr`, `/muon`, `/tra`, `/thanh-vien`, `/dashboard` (tổng quan).
+**Bị chặn:** `/books`, `/qr`, `/thanh-vien`, `/dashboard` (tổng quan).
 
 ### Thành viên có vai trò (không phải `user`)
 Được vào tất cả trang trong khu vực quản trị, bao gồm:
@@ -92,9 +94,10 @@ Chỉ được vào các trang sau (bị chặn các trang khác, redirect về 
 ## 4. Menu Sidebar
 
 ### Menu Kho sách (Kho sách, Mã QR, Mượn sách, Trả sách)
-Chỉ hiển thị cho:
+Hiển thị cho:
 - BCN: `admin`, `chairperson`, `vice_chairperson`
 - Ban Quản lý Sách: `head_book`, `vice_head_book`, `member_book`
+- Người dùng (`user`): chỉ thấy Mượn sách và Trả sách (vào `/books`, `/qr` vẫn bị chặn)
 
 ### Menu Tổng quan, Thành viên, Tài chính
 Chỉ hiển thị cho thành viên có vai trò (`club_permission !== 'user'`). Người dùng không thấy các mục này.

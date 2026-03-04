@@ -63,10 +63,11 @@ export default function XepHangContent({ timeTab = 'Tháng này', onTimeTabChang
     try {
       setLoading(true)
       setError(null)
+      const { headers } = getApiAuth()
       const [readersRes, statsRes, giftsRes] = await Promise.all([
-        fetch(apiUrl('/api/dashboard/top-readers')),
-        fetch(apiUrl('/api/dashboard/stats')),
-        fetch(apiUrl('/api/dashboard/ranking-gifts')),
+        fetch(apiUrl('/api/dashboard/top-readers'), { headers }),
+        fetch(apiUrl('/api/dashboard/stats'), { headers }),
+        fetch(apiUrl('/api/dashboard/ranking-gifts'), { headers }),
       ])
       if (!readersRes.ok) throw new Error('Lỗi tải bảng xếp hạng')
       const readers = await readersRes.json()

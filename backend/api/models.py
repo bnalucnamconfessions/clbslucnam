@@ -59,14 +59,16 @@ class OverdueBook(models.Model):
 
 
 class Book(models.Model):
-    """Sách trong kho."""
+    """Sách trong kho. code: mã 12 chữ số dùng cho QR và hiển thị (nếu có)."""
 
     title = models.CharField(max_length=255)
     author = models.CharField(max_length=255)
     genre = models.CharField(max_length=100, blank=True)
     publisher = models.CharField(max_length=255, blank=True)
     price = models.CharField(max_length=50, blank=True)
+    purchase_date = models.DateField(null=True, blank=True)
     is_borrowed = models.BooleanField(default=False)
+    code = models.CharField(max_length=12, unique=True, null=True, blank=True)
 
     class Meta:
         db_table = "books"
@@ -140,6 +142,7 @@ class Account(models.Model):
     club_permission = models.CharField(
         max_length=35, choices=ROLE_CHOICES, default="user"
     )
+    student_id_image_url = models.URLField(max_length=500, blank=True, null=True)
     last_login_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -272,6 +275,17 @@ class DoiTacData(models.Model):
 
     class Meta:
         db_table = "doi_tac_data"
+        ordering = ["key"]
+
+
+class WebsiteConfig(models.Model):
+    """Cấu hình website (một bản ghi, chỉ Ban chủ nhiệm chỉnh sửa)."""
+    key = models.CharField(max_length=50, default="main", unique=True)
+    data = models.JSONField(default=dict, blank=True)  # siteName, logoUrl, contactEmail, footerText, ...
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "website_config"
         ordering = ["key"]
 
 

@@ -20,6 +20,7 @@ urlpatterns = [
     path("api/accounts", views.account_list),
     path("api/accounts/profile", views.account_update_profile),
     path("api/accounts/upload-avatar", views.account_upload_avatar),
+    path("api/accounts/upload-student-id", views.account_upload_student_id),
     path("api/accounts/<int:account_id>/permission", views.account_update_permission),
     path("api/accounts/<int:account_id>/delete", views.account_delete),
     path("api/dashboard/stats", views.dashboard_stats),
@@ -30,6 +31,7 @@ urlpatterns = [
     path("api/dashboard/ranking-gifts/update", views.ranking_gifts_update),
     path("api/dashboard/overdue", views.overdue_books),
     path("api/books", views.book_list),
+    path("api/books/stats", views.book_stats),
     path("api/books/create", views.book_create),
     path("api/books/bulk-create", views.book_bulk_create),
     path("api/books/<int:book_id>/delete", views.book_delete),
@@ -64,4 +66,6 @@ urlpatterns = [
     path("api/quyen-gop/donations", views.quyen_gop_donations_list),
     path("api/quyen-gop/donate", views.quyen_gop_donate),
     path("api/upload-image", views.upload_image),
+    path("api/website-config", views.website_config_get),
+    path("api/website-config/update", views.website_config_update),
 ]

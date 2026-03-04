@@ -450,10 +450,10 @@ export default function DashboardPage() {
                     ))}
                   </div>
                 </div>
-                <div className="w-full h-[240px] mt-4 flex items-center justify-center rounded-lg bg-slate-50 border border-slate-200">
+                <div className="w-full h-[240px] min-h-[200px] mt-4 flex items-center justify-center rounded-lg bg-slate-50 border border-slate-200">
                   {trendData.length > 0 ? (
-                    <div className="w-full h-full min-h-0 p-2">
-                      <ResponsiveContainer width="100%" height="100%">
+                    <div className="w-full h-full min-h-[180px] p-2">
+                      <ResponsiveContainer width="100%" height="100%" minHeight={180}>
                         <LineChart
                           data={trendData.map((p) => ({ label: p.label, muon: p.borrowCount, tra: p.returnCount }))}
                           margin={{ top: 8, right: 8, left: 0, bottom: 0 }}

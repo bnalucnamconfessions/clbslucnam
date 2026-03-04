@@ -125,10 +125,6 @@ export default function HoSoPage() {
       }
     }
     if (resolvedAccountId != null) setAccountId(resolvedAccountId)
-    // #region agent log
-    const tokenForLog = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
-    fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8a296a'},body:JSON.stringify({sessionId:'8a296a',location:'ho-so loadUserFromStorage',message:'loadUserFromStorage',data:{fromUserInfo:savedUserInfo.accountId,tokenPrefix:tokenForLog?.slice(0,8)??null,resolvedAccountId},timestamp:Date.now(),hypothesisId:'H1,H2,H3'})}).catch(()=>{});
-    // #endregion
 
     if (savedProfile) {
       // Đã có hồ sơ lưu theo tài khoản → load toàn bộ
@@ -200,10 +196,7 @@ export default function HoSoPage() {
           ? apiUrl(`/api/auth/me?email=${encodeURIComponent(email)}`)
           : apiUrl('/api/auth/me')
         const res = await fetch(url, { credentials: 'include', headers: { ...headers, 'Content-Type': 'application/json' } })
-        if (!res.ok) {
-          fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8a296a'},body:JSON.stringify({sessionId:'8a296a',location:'ho-so syncRoleFromBackend',message:'auth/me failed',data:{status:res.status},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-          return
-        }
+        if (!res.ok) return
         const data = await res.json()
         const newRole = data.role || parsed.role || 'Người dùng'
         const newPerm = (data.clubPermission || 'user').toLowerCase()
@@ -212,9 +205,6 @@ export default function HoSoPage() {
         const accountId = data.accountId ?? parsed.accountId ?? null
         const newStudentIdImageUrl = data.studentIdImageUrl ?? parsed.studentIdImageUrl ?? ''
         const updated = { ...parsed, role: newRole, clubPermission: newPerm, fullName: data.fullName || parsed.fullName, joinDate: newJoinDate, avatar: newAvatar, studentIdImageUrl: newStudentIdImageUrl, accountId: accountId ?? parsed.accountId }
-        // #region agent log
-        fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8a296a'},body:JSON.stringify({sessionId:'8a296a',location:'ho-so syncRoleFromBackend',message:'auth/me response',data:{accountIdFromApi:data.accountId,hasAccountId:typeof data.accountId!=='undefined',keys:Object.keys(data)},timestamp:Date.now(),hypothesisId:'H1,H4'})}).catch(()=>{});
-        // #endregion
         localStorage.setItem('userInfo', JSON.stringify(updated))
         localStorage.setItem('adminRole', newRole)
         if (newAvatar) localStorage.setItem('adminAvatar', newAvatar)
@@ -234,12 +224,6 @@ export default function HoSoPage() {
     }
     syncRoleFromBackend()
   }, [])
-
-  useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8a296a'},body:JSON.stringify({sessionId:'8a296a',location:'ho-so accountId state',message:'accountId state',data:{accountId},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-    // #endregion
-  }, [accountId])
 
   const handleInputChange = (field: keyof PersonalInfo, value: string) => {
     setPersonalInfo(prev => ({

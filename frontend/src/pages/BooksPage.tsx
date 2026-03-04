@@ -52,12 +52,6 @@ export default function BooksPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const perPage = 10
 
-  // #region agent log
-  useEffect(() => {
-    if (typeof window !== 'undefined') fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'books/page.tsx:mount', message: 'BooksPage mounted', data: {}, timestamp: Date.now(), hypothesisId: 'C' }) }).catch(() => {})
-  }, [])
-  // #endregion
-
   const fetchBooks = async () => {
     try {
       setLoading(true)
@@ -68,21 +62,12 @@ export default function BooksPage() {
         return
       }
       const url = apiUrlWithAuth('/api/books')
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'books/page.tsx:fetchBooks:start', message: 'fetchBooks start', data: { url: url.substring(0, 80), hasAuth: !!headers['Authorization'] }, timestamp: Date.now(), hypothesisId: 'B' }) }).catch(() => {})
-      // #endregion
       const res = await fetch(url, { headers })
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'books/page.tsx:fetchBooks:response', message: 'fetchBooks response', data: { ok: res.ok, status: res.status }, timestamp: Date.now(), hypothesisId: 'B' }) }).catch(() => {})
-      // #endregion
       const data = await res.json()
       if (!res.ok) {
         const msg = (data && typeof data.detail === 'string') ? data.detail : 'Lỗi tải danh sách sách'
         throw new Error(msg)
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'books/page.tsx:fetchBooks:data', message: 'fetchBooks data', data: { isArray: Array.isArray(data), length: Array.isArray(data) ? data.length : undefined }, timestamp: Date.now(), hypothesisId: 'E' }) }).catch(() => {})
-      // #endregion
       if (!Array.isArray(data)) {
         setBooks([])
         setError('Dữ liệu từ máy chủ không hợp lệ.')
@@ -91,9 +76,6 @@ export default function BooksPage() {
       setBooks(data)
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('booksStatsChanged'))
     } catch (e) {
-      // #region agent log
-      fetch('http://127.0.0.1:7243/ingest/11c5d4be-529a-4a0d-a759-627a8c8062e8', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'books/page.tsx:fetchBooks:catch', message: 'fetchBooks error', data: { message: e instanceof Error ? e.message : String(e) }, timestamp: Date.now(), hypothesisId: 'B' }) }).catch(() => {})
-      // #endregion
       setError(e instanceof Error ? e.message : 'Không kết nối được backend')
     } finally {
       setLoading(false)

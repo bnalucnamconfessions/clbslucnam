@@ -32,6 +32,7 @@ from .models import (
     DoiTacData,
     DonationCampaign,
     Donation,
+    WebsiteConfig,
 )
 
 # Map club_permission -> display label (dùng chung cho login, auth_me, google_auth_exchange)
@@ -83,6 +84,7 @@ def login(request):
         )
     acc.last_login_at = timezone.now()
     acc.save(update_fields=["last_login_at"])
+    acc.refresh_from_db()
     role_display = _ROLE_DISPLAY.get(acc.club_permission or "user", "Người dùng")
     return Response({
         "token": f"email-{acc.id}",
@@ -131,6 +133,7 @@ def auth_me(request):
         acc = Account.objects.filter(Q(email=email) | Q(display_email=email)).first()
         if not acc:
             return Response({"detail": "Không tìm thấy tài khoản"}, status=status.HTTP_404_NOT_FOUND)
+    acc.refresh_from_db()
     perm = acc.club_permission or "user"
     role_display = _ROLE_DISPLAY.get(perm, "Người dùng")
     join_date_str = None
@@ -144,6 +147,7 @@ def auth_me(request):
         "email": (getattr(acc, "display_email", "") or "").strip() or acc.email or "",
         "joinDate": join_date_str,
         "avatarUrl": acc.avatar_url or None,
+        "studentIdImageUrl": getattr(acc, "student_id_image_url", None) or None,
         "accountId": acc.id,
     })
 
@@ -555,8 +559,8 @@ def google_auth_callback(request):
     import requests as httpreq
     code = request.GET.get("code")
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
-    scheme = "https" if request.is_secure() else "http"
-    redirect_uri = f"{scheme}://{request.get_host()}/api/auth/google/callback"
+    # redirect_uri phải khớp chính xác với giá trị gửi trong google_auth_start (frontend URL)
+    redirect_uri = f"{frontend_url}/api/auth/google/callback"
     client_id = os.getenv("GOOGLE_CLIENT_ID", "")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "")
     if not code:
@@ -599,10 +603,14 @@ def google_auth_callback(request):
         acc.avatar_url = idinfo.get("picture") or None
         acc.last_login_at = timezone.now()
         acc.save(update_fields=["full_name", "avatar_url", "last_login_at"])
-        role_enc = urlquote("Quản trị viên")
-        params = f"token={app_token}&fullName={urlquote(name)}&role={role_enc}&accountId={acc.id}"
+        acc.refresh_from_db()
+        perm = acc.club_permission or "user"
+        role_display = _ROLE_DISPLAY.get(perm, "Người dùng")
+        params = f"token={app_token}&fullName={urlquote(name)}&role={urlquote(role_display)}&clubPermission={urlquote(perm)}&accountId={acc.id}"
         if email:
             params += f"&email={urlquote(email)}"
+        if idinfo.get("picture"):
+            params += f"&picture={urlquote(idinfo.get('picture', ''))}"
         return redirect(f"{frontend_url}/dang-nhap?{params}")
     except Exception:
         return redirect(f"{frontend_url}/dang-nhap?error=auth_failed")
@@ -665,6 +673,34 @@ def account_upload_avatar(request):
 
 @csrf_exempt
 @api_view(["POST"])
+def account_upload_student_id(request):
+    """Tải ảnh thẻ học sinh lên, lưu vào media/student_id và cập nhật account. Yêu cầu đăng nhập."""
+    acc, err = _get_account_from_request(request)
+    if err is not None:
+        return err
+    if "file" not in request.FILES:
+        return Response({"detail": "Thiếu file ảnh"}, status=status.HTTP_400_BAD_REQUEST)
+    f = request.FILES["file"]
+    allowed = ("image/jpeg", "image/png", "image/gif", "image/webp")
+    if f.content_type not in allowed:
+        return Response({"detail": "Chỉ chấp nhận ảnh JPG, PNG, GIF, WebP"}, status=status.HTTP_400_BAD_REQUEST)
+    ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}.get(f.content_type, ".jpg")
+    student_id_dir = os.path.join(settings.MEDIA_ROOT, "student_id")
+    os.makedirs(student_id_dir, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}{ext}"
+    filepath = os.path.join(student_id_dir, filename)
+    with open(filepath, "wb") as dst:
+        for chunk in f.chunks():
+            dst.write(chunk)
+    base = request.build_absolute_uri("/").rstrip("/")
+    url = f"{base}/{settings.MEDIA_URL.rstrip('/')}/student_id/{filename}"
+    acc.student_id_image_url = url
+    acc.save(update_fields=["student_id_image_url"])
+    return Response({"url": url})
+
+
+@csrf_exempt
+@api_view(["POST"])
 def upload_image(request):
     """Tải ảnh từ máy lên (dùng cho đối tác, quà tặng). Yêu cầu BCN hoặc Ban NS-TC."""
     _, err = _require_doi_tac_edit(request)
@@ -709,6 +745,9 @@ def account_update_profile(request):
     if "avatar" in data:
         acc.avatar_url = (data.get("avatar") or "").strip() or None
         update_fields.append("avatar_url")
+    if "studentIdImageUrl" in data:
+        acc.student_id_image_url = (data.get("studentIdImageUrl") or "").strip() or None
+        update_fields.append("student_id_image_url")
     if "displayEmail" in data or "display_email" in data:
         if hasattr(acc, "display_email"):
             acc.display_email = (data.get("displayEmail") or data.get("display_email") or "").strip()
@@ -781,6 +820,7 @@ def account_update_permission(request, account_id):
         return Response({"detail": "Quyền không hợp lệ"}, status=status.HTTP_400_BAD_REQUEST)
     acc.club_permission = perm
     acc.save(update_fields=["club_permission"])
+    acc.refresh_from_db()
 
     _sync_account_member(acc, perm)
 
@@ -819,7 +859,20 @@ def _sync_account_member(acc, perm):
                 member.avatar_url = acc.avatar_url
             member.save(update_fields=["name", "department", "role", "status", "avatar_url"])
     else:
-        Member.objects.filter(user_id__in=[user_id, f"acc-{acc.id}"]).update(status="inactive")
+        # Tạo Member nếu chưa có để id 12 (user) xuất hiện trong danh sách khi staff mượn sách; nếu đã có (hạ quyền) thì đánh inactive
+        member, created = Member.objects.get_or_create(
+            user_id=user_id,
+            defaults={
+                "name": acc.full_name or acc.email or "Chưa đặt tên",
+                "department": "",
+                "role": "Người dùng",
+                "join_date": date.today(),
+                "status": "active",
+                "avatar_url": acc.avatar_url,
+            },
+        )
+        if not created:
+            Member.objects.filter(user_id__in=[user_id, f"acc-{acc.id}"]).update(status="inactive")
 
 
 @csrf_exempt
@@ -845,8 +898,8 @@ def account_delete(request, account_id):
 
 @api_view(["GET"])
 def dashboard_stats(request):
-    """Lấy thống kê tổng quan từ dữ liệu thực (BorrowRecord, ...). Chỉ thành viên có vai trò."""
-    _, err = _require_thanh_vien(request)
+    """Lấy thống kê tổng quan từ dữ liệu thực (BorrowRecord, ...). Cho phép mọi tài khoản đã đăng nhập."""
+    _, err = _get_account_from_request(request)
     if err is not None:
         return err
     today = date.today()
@@ -1092,20 +1145,65 @@ def overdue_books(request):
 
 
 # --- Sách ---
+def _book_display_id(book):
+    """Mã 12 chữ số thống nhất: code nếu có, không thì pad id."""
+    if book.code:
+        return book.code
+    return str(book.id).zfill(12)
+
+
+def _next_available_book_code():
+    """Mã 12 số nhỏ nhất chưa dùng (tái sử dụng ô trống sau khi xoá sách)."""
+    used = set()
+    for b in Book.objects.all():
+        if b.code and b.code.isdigit():
+            try:
+                used.add(int(b.code))
+            except ValueError:
+                pass
+        else:
+            used.add(b.id)
+    k = 1
+    while k in used:
+        k += 1
+    return str(k).zfill(12)
+
+
 @api_view(["GET"])
-def book_list(request):
+def book_stats(request):
+    """Thống kê nhẹ cho sidebar (tổng sách, đã liên kết, chờ in tem)."""
     _, err = _require_kho_sach(request)
     if err is not None:
         return err
+    total = Book.objects.count()
+    pending_print = Book.objects.filter(title__startswith="Mã QR - Chờ").count()
+    linked = total - pending_print
+    return Response({"total": total, "linked": linked, "pendingPrint": pending_print})
+
+
+@api_view(["GET"])
+def book_list(request):
+    """Danh sách sách. BCN/Ban Sách: tất cả; user: được xem để mượn/trả."""
+    acc, err = _get_account_from_request(request)
+    if err is not None:
+        return err
+    perm = (acc.club_permission or "user").strip().lower()
+    if perm not in KHO_SACH_PERMISSIONS and perm != "user":
+        return Response(
+            {"detail": "Bạn cần đăng nhập để xem danh sách sách."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     rows = Book.objects.all()
     return Response([
         {
             "id": str(r.id),
+            "displayId": _book_display_id(r),
             "title": r.title,
             "author": r.author,
             "genre": r.genre or "",
             "publisher": r.publisher or "",
             "price": r.price or "",
+            "purchaseDate": r.purchase_date.isoformat() if r.purchase_date else None,
             "isBorrowed": r.is_borrowed,
         }
         for r in rows
@@ -1119,15 +1217,41 @@ def book_create(request):
     if err is not None:
         return err
     data = request.data
+    code = (data.get("code") or "").strip()
+    if code and len(code) == 12 and code.isdigit():
+        if Book.objects.filter(code=code).exists():
+            return Response(
+                {"detail": "Mã sách này đã tồn tại"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    else:
+        code = _next_available_book_code()
+    purchase_date = data.get("purchaseDate") or data.get("ngayMua") or data.get("purchase_date")
+    if purchase_date:
+        try:
+            from datetime import datetime
+            if isinstance(purchase_date, str):
+                purchase_date = datetime.strptime(purchase_date[:10], "%Y-%m-%d").date()
+            else:
+                purchase_date = None
+        except (ValueError, TypeError):
+            purchase_date = None
+    else:
+        purchase_date = None
     book = Book.objects.create(
         title=data.get("title", ""),
         author=data.get("author", ""),
         genre=data.get("genre", ""),
         publisher=data.get("publisher", ""),
         price=data.get("price", ""),
+        purchase_date=purchase_date,
         is_borrowed=False,
+        code=code,
     )
-    return Response({"id": book.id, "title": book.title}, status=status.HTTP_201_CREATED)
+    return Response(
+        {"id": book.id, "displayId": _book_display_id(book), "title": book.title},
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @csrf_exempt
@@ -1146,6 +1270,7 @@ def book_bulk_create(request):
         return Response({"detail": "Số lượng phải từ 1 đến 100"}, status=status.HTTP_400_BAD_REQUEST)
     created = []
     for i in range(count):
+        code = _next_available_book_code()
         book = Book.objects.create(
             title=f"Mã QR - Chờ nhập #{i + 1}",
             author="",
@@ -1153,6 +1278,7 @@ def book_bulk_create(request):
             publisher="",
             price="",
             is_borrowed=False,
+            code=code,
         )
         created.append({"id": book.id, "title": book.title})
     return Response({"created": len(created), "books": created}, status=status.HTTP_201_CREATED)
@@ -1180,6 +1306,16 @@ def book_update(request, book_id):
         book.publisher = data.get("publisher", "")
     if "price" in data:
         book.price = data.get("price", "")
+    if "purchaseDate" in data or "ngayMua" in data or "purchase_date" in data:
+        raw = data.get("purchaseDate") or data.get("ngayMua") or data.get("purchase_date")
+        if raw:
+            try:
+                from datetime import datetime
+                book.purchase_date = datetime.strptime(str(raw)[:10], "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                book.purchase_date = None
+        else:
+            book.purchase_date = None
     book.save()
     return Response({"id": book.id, "title": book.title})
 
@@ -1204,10 +1340,40 @@ def book_delete(request, book_id):
 # --- Thành viên ---
 @api_view(["GET"])
 def member_list(request):
+    """Danh sách thành viên. Có vai trò: tất cả; user: chỉ bản thân (để mượn/trả)."""
+    caller, err = _get_account_from_request(request)
+    if err is not None:
+        return err
+    perm = (caller.club_permission or "user").strip().lower()
+    if perm == "user":
+        uid = _account_user_id(caller)
+        member = Member.objects.filter(user_id__in=[uid, f"acc-{caller.id}"], status="active").first()
+        if not member:
+            _sync_account_member(caller, "user")
+            member = Member.objects.filter(user_id__in=[uid, f"acc-{caller.id}"], status="active").first()
+        if not member:
+            return Response([])
+        acc_id = _member_uid_to_acc_id(member.user_id)
+        student_id_image_url = getattr(caller, "student_id_image_url", None) or ""
+        result = [{
+            "id": str(acc_id) if acc_id is not None else (member.user_id or ""),
+            "name": member.name,
+            "userId": str(acc_id) if acc_id is not None else (member.user_id or ""),
+            "email": caller.email or getattr(caller, "display_email", "") or "",
+            "department": member.department or "",
+            "role": member.role or "",
+            "clubPermission": perm,
+            "joinDate": member.join_date.strftime("%d/%m/%Y") if member.join_date else "",
+            "status": member.status,
+            "avatarUrl": member.avatar_url or caller.avatar_url or "",
+            "studentIdImageUrl": student_id_image_url,
+        }]
+        return Response(result)
     _, err = _require_thanh_vien(request)
     if err is not None:
         return err
-    for acc in Account.objects.exclude(club_permission="user"):
+    # Đồng bộ Member cho mọi Account (kể cả user) để nhập ID 10, 11... vẫn tìm thấy
+    for acc in Account.objects.all():
         uid = _account_user_id(acc)
         if not Member.objects.filter(user_id__in=[uid, f"acc-{acc.id}"]).exists():
             _sync_account_member(acc, acc.club_permission or "user")
@@ -1219,12 +1385,16 @@ def member_list(request):
         avatar_url = r.avatar_url
         email = None
         acc_id = _member_uid_to_acc_id(r.user_id)
+        club_permission = "user"
+        student_id_image_url = None
         if acc_id is not None:
             acc = accounts_map.get(acc_id)
             if acc:
                 if acc.avatar_url:
                     avatar_url = acc.avatar_url
                 email = acc.email or getattr(acc, "display_email", None) or ""
+                club_permission = (acc.club_permission or "user").strip().lower()
+                student_id_image_url = getattr(acc, "student_id_image_url", None) or None
         # Một id thống nhất: id = mã thành viên (userId), không dùng pk nội bộ
         user_id_display = str(acc_id) if acc_id is not None else (r.user_id or "")
         result.append({
@@ -1234,9 +1404,11 @@ def member_list(request):
             "email": email or "",
             "department": r.department or "",
             "role": r.role or "",
+            "clubPermission": club_permission,
             "joinDate": r.join_date.strftime("%d/%m/%Y") if r.join_date else "",
             "status": r.status,
             "avatarUrl": avatar_url,
+            "studentIdImageUrl": student_id_image_url,
         })
     return Response(result)
 
@@ -1260,7 +1432,7 @@ def member_create(request):
 
 
 def _resolve_member_by_uid(member_uid):
-    """Tìm Member theo mã thành viên (user_id) hoặc pk hoặc account id hiển thị. Trả (member, None) hoặc (None, error_response)."""
+    """Tìm Member theo mã thành viên (user_id) hoặc pk hoặc account id hiển thị. Chuẩn hóa số: 8 và 000000000008 cùng trỏ tới account id 8."""
     uid = (member_uid or "").strip()
     member = Member.objects.filter(user_id=uid).first()
     if member:
@@ -1271,9 +1443,12 @@ def _resolve_member_by_uid(member_uid):
             return member, None
         except Member.DoesNotExist:
             pass
-        # id từ member_list có thể là account id (user_id_display); tìm member có user_id map tới account đó
+        # id từ member_list = account id; user_id trong DB là str(acc_id) (vd "8"). Cho phép "000000000008" trùng "8"
         acc_id = int(uid)
-        member = Member.objects.filter(user_id__in=[uid, f"acc-{acc_id}"]).first()
+        uid_normalized = str(acc_id)
+        member = Member.objects.filter(
+            user_id__in=[uid, uid_normalized, f"acc-{acc_id}"]
+        ).first()
         if member:
             return member, None
     return None, Response({"detail": "Thành viên không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
@@ -1661,10 +1836,15 @@ def notification_delete(request, notif_id):
 # --- Mượn / Trả ---
 @api_view(["GET"])
 def borrow_list(request):
-    _, err = _require_kho_sach(request)
+    """Danh sách phiếu mượn chưa trả. BCN/Ban Sách: tất cả; user: chỉ phiếu của mình."""
+    caller, err = _get_account_from_request(request)
     if err is not None:
         return err
+    perm = (caller.club_permission or "user").strip().lower()
     rows = BorrowRecord.objects.select_related("book", "member").filter(return_date__isnull=True)
+    if perm == "user":
+        caller_acc_id = caller.id
+        rows = [r for r in rows if r.member and _member_uid_to_acc_id(r.member.user_id) == caller_acc_id]
     result = []
     for r in rows:
         if r.member:
@@ -1686,10 +1866,25 @@ def borrow_list(request):
     return Response(result)
 
 
+def _log_borrow_400(reason, data):
+    import json
+    try:
+        with open(r"d:\code\clbslucnam\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "location": "borrow_create",
+                "message": "400",
+                "data": {"reason": reason, "bookId": data.get("bookId"), "memberId": data.get("memberId"), "is_guest": not data.get("memberId")},
+                "timestamp": __import__("time").time() * 1000,
+            }) + "\n")
+    except Exception:
+        pass
+
+
 @csrf_exempt
 @api_view(["POST"])
 def borrow_create(request):
-    caller, err = _require_kho_sach(request)
+    """Tạo phiếu mượn. Mọi tài khoản đăng nhập đều được tạo (kể cả tự mượn cho mình)."""
+    caller, err = _get_account_from_request(request)
     if err is not None:
         return err
     data = request.data
@@ -1699,31 +1894,69 @@ def borrow_create(request):
     guest_class = (data.get("guestClass") or data.get("guest_class") or "").strip()[:255]
     is_guest = member_id_param is None or (isinstance(member_id_param, str) and member_id_param.strip() == "")
     if not book_id:
+        _log_borrow_400("Thiếu bookId", data)
         return Response({"detail": "Thiếu bookId"}, status=status.HTTP_400_BAD_REQUEST)
     if is_guest:
         if not guest_name:
+            _log_borrow_400("Người mượn không tài khoản cần nhập tên (guestName).", data)
             return Response({"detail": "Người mượn không tài khoản cần nhập tên (guestName)."}, status=status.HTTP_400_BAD_REQUEST)
         member = None
     else:
         member, err_resp = _resolve_member_by_uid(str(member_id_param))
         if err_resp is not None:
             return err_resp
+        # Cho phép tài khoản tự mượn sách cho chính mình (đã bỏ chặn).
     try:
         book = Book.objects.get(pk=book_id)
     except Book.DoesNotExist:
         return Response({"detail": "Sách không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
     if book.is_borrowed:
+        _log_borrow_400("Sách đang được mượn", data)
         return Response({"detail": "Sách đang được mượn"}, status=status.HTTP_400_BAD_REQUEST)
     from datetime import date, timedelta
     borrow_date = date.today()
+    # Vai trò người mượn (để áp dụng borrowRules: dueDays, maxBooks)
+    borrower_role = "user"
+    if member:
+        acc_id = _member_uid_to_acc_id(member.user_id)
+        if acc_id is not None:
+            acc = Account.objects.filter(pk=acc_id).first()
+            if acc:
+                borrower_role = (acc.club_permission or "user").strip().lower()
+    if borrower_role not in BORROW_ROLE_KEYS:
+        borrower_role = "user"
+    if borrower_role == "user" and member:
+        acc_id = _member_uid_to_acc_id(member.user_id)
+        if acc_id is not None:
+            acc = Account.objects.filter(pk=acc_id).first()
+            if acc and not (getattr(acc, "student_id_image_url", None) or "").strip():
+                _log_borrow_400("Người dùng cần tải ảnh thẻ học sinh (Hồ sơ).", data)
+                return Response(
+                    {"detail": "Người dùng cần tải ảnh thẻ học sinh trong Thông tin cá nhân (Hồ sơ) trước khi mượn sách."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+    rules = _get_borrow_rules()
+    role_config = rules.get(borrower_role, {"dueDays": 14, "maxBooks": 3})
+    max_books = role_config.get("maxBooks", 3)
+    due_days = role_config.get("dueDays", 14)
+    # Kiểm tra số sách đang mượn chưa trả
+    if member:
+        current_outstanding = BorrowRecord.objects.filter(member=member, return_date__isnull=True).count()
+        if current_outstanding >= max_books:
+            detail = f"Theo vai trò của bạn, tối đa được mượn {max_books} cuốn. Hiện đang mượn {current_outstanding} cuốn chưa trả."
+            _log_borrow_400(detail, data)
+            return Response(
+                {"detail": detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
     due_date = data.get("dueDate")
     if due_date:
         try:
             due_date = date.fromisoformat(due_date[:10])
         except Exception:
-            due_date = borrow_date + timedelta(days=14)
+            due_date = borrow_date + timedelta(days=due_days)
     else:
-        due_date = borrow_date + timedelta(days=14)
+        due_date = borrow_date + timedelta(days=due_days)
     record = BorrowRecord.objects.create(
         book=book,
         member=member,
@@ -1741,7 +1974,8 @@ def borrow_create(request):
 @csrf_exempt
 @api_view(["POST"])
 def return_book(request):
-    caller, err = _require_kho_sach(request)
+    """Xác nhận trả sách. BCN/Ban Sách: mọi phiếu; user: chỉ phiếu của mình."""
+    caller, err = _get_account_from_request(request)
     if err is not None:
         return err
     data = request.data
@@ -1752,6 +1986,13 @@ def return_book(request):
         record = BorrowRecord.objects.select_related("book", "member", "recorded_by").get(pk=record_id)
     except BorrowRecord.DoesNotExist:
         return Response({"detail": "Phiếu mượn không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
+    perm = (caller.club_permission or "user").strip().lower()
+    if perm == "user":
+        if not record.member or _member_uid_to_acc_id(record.member.user_id) != caller.id:
+            return Response(
+                {"detail": "Bạn chỉ được trả phiếu mượn của chính mình."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
     from datetime import date
     record.return_date = date.today()
     raw_notes = (data.get("returnNotes") or data.get("return_notes") or "").strip()[:2000]
@@ -2137,6 +2378,94 @@ def doi_tac_update(request):
     return Response(current)
 
 
+# --- Cấu hình website (chỉ BCN chỉnh sửa) ---
+DEFAULT_WEBSITE_CONFIG = {
+    "siteName": "CLB Sách và Hành động THPT Lục Nam",
+    "logoUrl": "",
+    "contactEmail": "",
+    "footerText": "",
+}
+
+# Mặc định: hạn trả (ngày) và số sách tối đa được mượn theo từng vai trò (club_permission).
+BORROW_ROLE_KEYS = (
+    "admin", "chairperson", "vice_chairperson",
+    "head_book", "vice_head_book", "member_book",
+    "head_communication", "vice_head_communication", "member_communication",
+    "head_hr_finance", "vice_head_hr_finance", "member_hr_finance",
+    "user",
+)
+
+
+def _default_borrow_rules():
+    return {role: {"dueDays": 14, "maxBooks": 3} for role in BORROW_ROLE_KEYS}
+
+
+def _get_borrow_rules():
+    """Lấy borrowRules từ database; nếu thiếu thì merge với default."""
+    row = WebsiteConfig.objects.filter(key="main").first()
+    if not row or not row.data:
+        return _default_borrow_rules()
+    rules = (row.data or {}).get("borrowRules")
+    if not isinstance(rules, dict):
+        return _default_borrow_rules()
+    result = dict(_default_borrow_rules())
+    for role in BORROW_ROLE_KEYS:
+        r = rules.get(role)
+        if isinstance(r, dict):
+            due = r.get("dueDays")
+            max_b = r.get("maxBooks")
+            if due is not None and isinstance(due, (int, float)):
+                result[role]["dueDays"] = max(1, min(365, int(due)))
+            if max_b is not None and isinstance(max_b, (int, float)):
+                result[role]["maxBooks"] = max(1, min(20, int(max_b)))
+    return result
+
+
+@api_view(["GET"])
+def website_config_get(request):
+    """Lấy cấu hình website (dùng cho trang Cài đặt và hiển thị công khai)."""
+    row = WebsiteConfig.objects.filter(key="main").first()
+    if not row or not row.data:
+        data = dict(DEFAULT_WEBSITE_CONFIG)
+        data["borrowRules"] = _default_borrow_rules()
+        return Response(data)
+    data = dict(row.data)
+    for k in DEFAULT_WEBSITE_CONFIG:
+        data.setdefault(k, DEFAULT_WEBSITE_CONFIG[k])
+    data.setdefault("borrowRules", _get_borrow_rules())
+    return Response(data)
+
+
+@csrf_exempt
+@api_view(["PUT", "PATCH"])
+def website_config_update(request):
+    """Cập nhật cấu hình website. Chỉ Ban chủ nhiệm. Body: accountEmail (hoặc email), siteName?, logoUrl?, contactEmail?, footerText?, borrowRules?."""
+    acc, err = _require_ban_chu_nhiem(request)
+    if err is not None:
+        return err
+    data = request.data or {}
+    row, _ = WebsiteConfig.objects.get_or_create(key="main", defaults={"data": dict(DEFAULT_WEBSITE_CONFIG)})
+    current = dict(row.data) if row.data else {}
+    for key in ("siteName", "logoUrl", "contactEmail", "footerText"):
+        if key in data and isinstance(data[key], str):
+            current[key] = data[key].strip()
+    if "borrowRules" in data and isinstance(data["borrowRules"], dict):
+        merged = dict(_default_borrow_rules())
+        for role in BORROW_ROLE_KEYS:
+            r = data["borrowRules"].get(role)
+            if isinstance(r, dict):
+                due = r.get("dueDays")
+                max_b = r.get("maxBooks")
+                if due is not None and isinstance(due, (int, float)):
+                    merged[role]["dueDays"] = max(1, min(365, int(due)))
+                if max_b is not None and isinstance(max_b, (int, float)):
+                    merged[role]["maxBooks"] = max(1, min(20, int(max_b)))
+        current["borrowRules"] = merged
+    row.data = current
+    row.save(update_fields=["data", "updated_at"])
+    return Response(current)
+
+
 # --- Quyên góp ---
 # Chỉ Ban chủ nhiệm (QTV, Chủ nhiệm, Phó Chủ nhiệm) được tạo/sửa chiến dịch.
 QUYEN_GOP_EDIT_PERMISSIONS = ("admin", "chairperson", "vice_chairperson")
@@ -2196,6 +2525,14 @@ def _get_account_from_request(request):
             (data.get("accountEmail") or data.get("email") or "")
             or (request.GET.get("accountEmail") or request.GET.get("email") or "")
         ).strip()
+        # #region agent log
+        import json
+        try:
+            with open(r"d:\code\clbslucnam\.cursor\debug.log", "a", encoding="utf-8") as _f:
+                _f.write(json.dumps({"location": "_get_account_from_request", "message": "get_account", "data": {"email_from_get": bool(request.GET.get("accountEmail") or request.GET.get("email")), "email_len": len(email)}, "hypothesisId": "B", "timestamp": __import__("time").time() * 1000}) + "\n")
+        except Exception:
+            pass
+        # #endregion
         if not email:
             return None, Response(
                 {"detail": "Thiếu email tài khoản (accountEmail) hoặc token (Authorization: Bearer email-<id>)."},

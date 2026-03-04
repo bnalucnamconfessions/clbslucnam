@@ -27,16 +27,17 @@ export const PERM_LABELS: Record<string, string> = {
   user: 'Người dùng',
 }
 
-/** Người dùng (user): đường dẫn được phép vào (xem trang). /dashboard/doi-tac: mọi người xem được, chỉ Ban chủ nhiệm + Ban Nhân sự chỉnh sửa (canEditDoiTac). */
-export const USER_ALLOWED_PATHS = ['/dashboard/xep-hang', '/dashboard/quyen-gop', '/dashboard/doi-tac', '/ho-so', '/thong-bao']
+/** Người dùng (user): đường dẫn được phép vào (xem trang). Bao gồm mượn/trả sách. */
+export const USER_ALLOWED_PATHS = ['/dashboard/xep-hang', '/dashboard/quyen-gop', '/dashboard/doi-tac', '/ho-so', '/thong-bao', '/muon', '/tra']
 
-/** Người dùng (user): đường dẫn bị chặn, redirect về dashboard/xep-hang. */
-export const USER_RESTRICTED_PREFIXES = ['/books', '/qr', '/muon', '/tra', '/thanh-vien']
+/** Người dùng (user): đường dẫn bị chặn, redirect về dashboard/xep-hang. (Đã bỏ /muon, /tra để user được mượn/trả.) */
+export const USER_RESTRICTED_PREFIXES = ['/books', '/qr', '/thanh-vien']
 
-/** Sidebar: quyền được thấy menu Kho sách, Mã QR, Mượn, Trả. Trưởng ban thuộc BCN; Phó ban thuộc các ban. */
+/** Sidebar: quyền được thấy menu Kho sách, Mã QR, Mượn, Trả. Bao gồm user (chỉ Mượn/Trả). */
 export const SIDEBAR_SHOW_BOOK_MENU: string[] = [
   'admin', 'chairperson', 'vice_chairperson',
   'head_book', 'vice_head_book', 'member_book',
+  'user',
 ]
 
 /** Tài chính: quyền thêm giao dịch — Ban chủ nhiệm (QTV, Chủ nhiệm, Phó Chủ nhiệm) + Ban Nhân sự - Tài Chính. */
